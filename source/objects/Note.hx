@@ -24,6 +24,7 @@ typedef NoteSplashData = {
 	texture:String,
 	useGlobalShader:Bool, //breaks r/g/b but makes it copy default colors for your custom note
 	useRGBShader:Bool,
+	splashUseRGBShader:Bool, // controls splash RGB independently from note RGB
 	antialiasing:Bool,
 	r:FlxColor,
 	g:FlxColor,
@@ -104,6 +105,7 @@ class Note extends FlxSprite
 		antialiasing: !PlayState.isPixelStage,
 		useGlobalShader: false,
 		useRGBShader: (PlayState.SONG != null) ? !(PlayState.SONG.disableNoteRGB == true) : true,
+		splashUseRGBShader: true,
 		r: -1,
 		g: -1,
 		b: -1,
@@ -383,7 +385,19 @@ class Note extends FlxSprite
 			skin = customSkin;
 			_lastValidChecked = customSkin;
 		}
-		else skinPostfix = '';
+		else {
+			skinPostfix = '';
+			if(skin != _lastValidChecked && !Paths.fileExists('images/' + path + skin + '.png', IMAGE))
+			{
+				// fallback: try legacy path without noteSkins/ subfolder (0.6.3 compat)
+				var legacySkin:String = skin.startsWith('noteSkins/') ? skin.substr(10) : null;
+				if(legacySkin != null && legacySkin.length > 0 && Paths.fileExists('images/' + path + legacySkin + '.png', IMAGE))
+					skin = legacySkin;
+				else
+					skin = defaultNoteSkin;
+				_lastValidChecked = skin;
+			}
+		}
 
 		if(PlayState.isPixelStage) {
 			if(isSustainNote) {

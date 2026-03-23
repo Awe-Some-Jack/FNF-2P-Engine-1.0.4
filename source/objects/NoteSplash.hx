@@ -60,17 +60,29 @@ class NoteSplash extends FlxSprite
 	public var maxAnims(default, set):Int = 0;
 	public function loadSplash(?splash:String)
 	{
-		config = null;
-		maxAnims = 0;
-
 		if(splash == null)
 		{
 			splash = defaultNoteSplash + getSplashSkinPostfix();
 			if (PlayState.SONG != null && PlayState.SONG.splashSkin != null && PlayState.SONG.splashSkin.length > 0) splash = PlayState.SONG.splashSkin;
 		}
 
+		if (texture == splash && config != null) return;
+
+		config = null;
+		maxAnims = 0;
+
 		texture = splash;
 		frames = Paths.getSparrowAtlas(texture);
+		if (frames == null)
+		{
+			// fallback: try legacy path without noteSplashes/ subfolder (0.6.3 compat)
+			if (texture.startsWith('noteSplashes/'))
+			{
+				var legacyTexture:String = texture.substr(13);
+				if (legacyTexture.length > 0) frames = Paths.getSparrowAtlas(legacyTexture);
+				if (frames != null) { texture = legacyTexture; }
+			}
+		}
 		if (frames == null)
 		{
 			texture = defaultNoteSplash + getSplashSkinPostfix();
@@ -222,7 +234,8 @@ class NoteSplash extends FlxSprite
 		if (config.allowRGB)
 		{
 			Note.initializeGlobalRGBShader(noteData % Note.colArray.length);
-			if (inEditor || (note == null || note.noteSplashData.useRGBShader) && (PlayState.SONG == null || !PlayState.SONG.disableNoteRGB))
+			var splashWantsRGB:Bool = (note == null) ? true : note.noteSplashData.splashUseRGBShader;
+		if (inEditor || splashWantsRGB && (PlayState.SONG == null || !PlayState.SONG.disableSplashRGB))
 			{
 				tempShader = new RGBPalette();
 				// If Note RGB is enabled:

@@ -97,8 +97,9 @@ class LuaUtils
 
 			for (i in 1...splitProps.length)
 			{
-				var j:Dynamic = splitProps[i].substr(0, splitProps[i].length - 1);
-				target = target[j];
+				var j:String = splitProps[i].substr(0, splitProps[i].length - 1);
+				var jInt:Null<Int> = Std.parseInt(j);
+				target = (jInt != null) ? target[jInt] : Reflect.getProperty(target, j);
 			}
 			return target;
 		}

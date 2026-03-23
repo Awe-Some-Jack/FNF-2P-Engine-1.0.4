@@ -35,6 +35,10 @@ import openfl.filters.ShaderFilter;
 
 import shaders.ErrorHandledShader;
 
+#if (VIDEOS_ALLOWED && hxvlc)
+import hxvlc.flixel.FlxVideoSprite as HxVlcVideoSprite;
+#end
+
 import objects.VideoSprite;
 import objects.Note.EventNote;
 import objects.*;
@@ -109,6 +113,9 @@ class PlayState extends MusicBeatState
 
 	public var songSpeedTween:FlxTween;
 	public var songSpeed(default, set):Float = 1;
+
+	public var modchartTweens:Map<String, FlxTween> = new Map<String, FlxTween>();
+	public var modchartTimers:Map<String, FlxTimer> = new Map<String, FlxTimer>();
 	public var songSpeedType:String = "multiplicative";
 	public var noteKillOffset:Float = 350;
 
@@ -160,12 +167,16 @@ class PlayState extends MusicBeatState
 	public var eventNotes:Array<EventNote> = [];
 
 	public var camFollow:FlxObject;
+
+	public var camFollowPos(get, never):FlxObject;
+	inline function get_camFollowPos():FlxObject return camFollow;
 	private static var prevCamFollow:FlxObject;
 
 	public var strumLineNotes:FlxTypedGroup<StrumNote> = new FlxTypedGroup<StrumNote>();
 	public var opponentStrums:FlxTypedGroup<StrumNote> = new FlxTypedGroup<StrumNote>();
 	public var playerStrums:FlxTypedGroup<StrumNote> = new FlxTypedGroup<StrumNote>();
 	public var grpNoteSplashes:FlxTypedGroup<NoteSplash> = new FlxTypedGroup<NoteSplash>();
+	public var holdSplashEffect:objects.HoldSplashEffect;
 
 	public var camZooming:Bool = false;
 	public var camZoomingMult:Float = 1;
@@ -177,7 +188,9 @@ class PlayState extends MusicBeatState
 	public var combo:Int = 0;
 
 	public var healthBar:Bar;
+	public var healthBarBG:FlxSprite; // 0.6.3 호환: 구버전 Lua가 healthBarBG로 접근 → Bar.bg를 가리킴
 	public var timeBar:Bar;
+	public var timeBarBG:FlxSprite; // 0.6.3 호환: 구버전 Lua가 timeBarBG로 접근 → Bar.bg를 가리킴
 	var songPercent:Float = 0;
 
 	public var ratingsData:Array<Rating> = Rating.loadDefault();
@@ -213,7 +226,7 @@ class PlayState extends MusicBeatState
 	public var songHits:Int = 0;
 	public var songMisses:Int = 0;
 	public var scoreTxt:FlxText;
-	var timeTxt:FlxText;
+	public var timeTxt:FlxText;
 	var scoreTxtTween:FlxTween;
 
 	public static var campaignScore:Int = 0;
@@ -266,9 +279,20 @@ class PlayState extends MusicBeatState
 
 	private static var _lastLoadedModDirectory:String = '';
 	public static var nextReloadAll:Bool = false;
+
+	private static var _scriptDirCache:Map<String, Array<String>> = null;
+	private inline function cachedReadDir(folder:String):Array<String>
+	{
+		if (_scriptDirCache == null) _scriptDirCache = new Map();
+		if (!_scriptDirCache.exists(folder))
+			_scriptDirCache.set(folder, sys.FileSystem.readDirectory(folder));
+		return _scriptDirCache.get(folder);
+	}
+
 	override public function create()
 	{
 		//trace('Playback Rate: ' + playbackRate);
+		_scriptDirCache = null;
 		_lastLoadedModDirectory = Mods.currentModDirectory;
 		Paths.clearStoredMemory();
 		if(nextReloadAll)
@@ -432,7 +456,7 @@ class PlayState extends MusicBeatState
 		#if (LUA_ALLOWED || HSCRIPT_ALLOWED)
 		// "SCRIPTS FOLDER" SCRIPTS
 		for (folder in Mods.directoriesWithFile(Paths.getSharedPath(), 'scripts/'))
-			for (file in FileSystem.readDirectory(folder))
+			for (file in cachedReadDir(folder))
 			{
 				#if LUA_ALLOWED
 				if(file.toLowerCase().endsWith('.lua'))
@@ -495,6 +519,7 @@ class PlayState extends MusicBeatState
 		timeBar.visible = showTime;
 		uiGroup.add(timeBar);
 		uiGroup.add(timeTxt);
+		timeBarBG = timeBar.bg;
 
 		noteGroup.add(strumLineNotes);
 
@@ -507,6 +532,9 @@ class PlayState extends MusicBeatState
 		generateSong();
 
 		noteGroup.add(grpNoteSplashes);
+
+		holdSplashEffect = new objects.HoldSplashEffect();
+		noteGroup.add(holdSplashEffect);
 
 		camFollow = new FlxObject();
 		camFollow.setPosition(camPos.x, camPos.y);
@@ -534,6 +562,7 @@ class PlayState extends MusicBeatState
 		healthBar.alpha = ClientPrefs.data.healthBarAlpha;
 		reloadHealthBarColors();
 		uiGroup.add(healthBar);
+		healthBarBG = healthBar.bg;
 
 		iconP1 = new HealthIcon(boyfriend.healthIcon, true);
 		iconP1.y = healthBar.y - 75;
@@ -588,7 +617,7 @@ class PlayState extends MusicBeatState
 		// SONG SPECIFIC SCRIPTS
 		#if (LUA_ALLOWED || HSCRIPT_ALLOWED)
 		for (folder in Mods.directoriesWithFile(Paths.getSharedPath(), 'data/$songName/'))
-			for (file in FileSystem.readDirectory(folder))
+			for (file in cachedReadDir(folder))
 			{
 				#if LUA_ALLOWED
 				if(file.toLowerCase().endsWith('.lua'))
@@ -827,6 +856,20 @@ class PlayState extends MusicBeatState
 	}
 
 	public var videoCutscene:VideoSprite = null;
+
+	// Mid-song video sprites (hxvlc based, separate from the cutscene VideoSprite system)
+	#if (VIDEOS_ALLOWED && hxvlc)
+	public var videoSprites:Map<String, HxVlcVideoSprite> = new Map();
+	public var videoDesiredState:Map<String, String> = new Map(); // 'playing' | 'paused' | 'stopped'
+	public var videoDesiredVolume:Map<String, Float> = new Map();
+	public var videoPrecaches:Map<String, Bool> = new Map();
+	public var videoFormatHandlers:Map<String, Void->Void> = new Map();
+	public var videoEndHandlers:Map<String, Void->Void> = new Map();
+	public var videoResizeHandlers:Map<String, Dynamic> = new Map();
+	// Tracks which videos were paused by PauseSubState opening (so only those resume on close)
+	public var videoPausedBySubState:Map<String, Bool> = new Map();
+	#end
+
 	public function startVideo(name:String, forMidSong:Bool = false, canSkip:Bool = true, loop:Bool = false, playOnLoad:Bool = true)
 	{
 		#if VIDEOS_ALLOWED
@@ -892,6 +935,305 @@ class PlayState extends MusicBeatState
 		else
 			startCountdown();
 	}
+
+	// ==================== MID-SONG VIDEO FUNCTIONS (hxvlc) ====================
+
+	#if (VIDEOS_ALLOWED && hxvlc)
+	function cleanupManagedVideo(tag:String, ?videoSprite:HxVlcVideoSprite, ?removeFromMaps:Bool = true):Void
+	{
+		if (videoSprite == null) videoSprite = videoSprites.get(tag);
+
+		var fh:Void->Void = videoFormatHandlers.get(tag);
+		if (videoSprite != null && fh != null)
+			try { videoSprite.bitmap.onFormatSetup.remove(fh); } catch(e:Dynamic) {}
+
+		var eh:Void->Void = videoEndHandlers.get(tag);
+		if (videoSprite != null && eh != null)
+			try { videoSprite.bitmap.onEndReached.remove(eh); } catch(e:Dynamic) {}
+
+		var rh:Dynamic = videoResizeHandlers.get(tag);
+		if (rh != null)
+			try { FlxG.signals.gameResized.remove(rh); } catch(e:Dynamic) {}
+
+		videoFormatHandlers.remove(tag);
+		videoEndHandlers.remove(tag);
+		videoResizeHandlers.remove(tag);
+
+		if (videoSprite != null) {
+			try { videoSprite.stop(); } catch(e:Dynamic) {}
+			var capturedSprite = videoSprite;
+			new FlxTimer().start(0.05, function(_) {
+				remove(capturedSprite, true);
+				try { capturedSprite.destroy(); } catch(e:Dynamic) {}
+			});
+		}
+
+		if (removeFromMaps) {
+			videoSprites.remove(tag);
+			videoDesiredState.remove(tag);
+			videoDesiredVolume.remove(tag);
+			videoPausedBySubState.remove(tag);
+		}
+	}
+
+	public function precacheVideo(name:String, ?tag:String):Void
+	{
+		if (tag == null || tag.length == 0) tag = name;
+		if (videoPrecaches.exists(tag)) return;
+		var filepath:String = Paths.video(name);
+		#if sys
+		if (!FileSystem.exists(filepath)) return;
+		#else
+		if (!OpenFlAssets.exists(filepath)) return;
+		#end
+		#if sys
+		try {
+			var input = sys.io.File.read(filepath, true);
+			var bytes = haxe.io.Bytes.alloc(1024 * 256);
+			try { input.readBytes(bytes, 0, bytes.length); } catch(e:Dynamic) {}
+			input.close();
+		} catch(e:Dynamic) {}
+		#end
+		videoPrecaches.set(tag, true);
+	}
+
+	public function makeVideo(name:String, tag:String, cam:Dynamic, ?pauseOnReady:Bool = false):Void
+	{
+		if (tag == null || tag.length == 0) tag = name;
+		var filepath:String = Paths.video(name);
+		#if sys
+		if (!FileSystem.exists(filepath))
+		#else
+		if (!OpenFlAssets.exists(filepath))
+		#end
+		{
+			FlxG.log.warn('makeVideo: Couldnt find video file: ' + name);
+			return;
+		}
+
+		// Cleanup existing video with same tag
+		if (videoSprites.exists(tag))
+			cleanupManagedVideo(tag, videoSprites.get(tag));
+
+		var resolveCam = function(c:Dynamic):FlxCamera {
+			if (c == null) return camGame;
+			#if (haxe_ver >= 4.0)
+			if (Std.isOfType(c, FlxCamera)) return cast c;
+			#else
+			if (Std.is(c, FlxCamera)) return cast c;
+			#end
+			var s:String = Std.string(c).toLowerCase();
+			return switch (s) {
+				case 'camhud' | 'hud': camHUD;
+				case 'camother' | 'other': camOther;
+				default: camGame;
+			};
+		};
+
+		var targetCam:FlxCamera = resolveCam(cam);
+		var videoSprite:HxVlcVideoSprite = new HxVlcVideoSprite();
+		var wantsPauseOnReady:Bool = (pauseOnReady == true);
+		videoSprite.alpha = wantsPauseOnReady ? 0.00001 : 1;
+		videoSprite.antialiasing = ClientPrefs.data.antialiasing;
+		videoSprite.cameras = [targetCam];
+		if (targetCam != camGame) videoSprite.scrollFactor.set(0, 0);
+
+		// Apply desired volume if set before creation (volumeAdjust is 0.0-1.0 multiplier)
+		if (videoDesiredVolume.exists(tag)) {
+			var v = videoDesiredVolume.get(tag);
+			if (v < 0) v = 0; else if (v > 1) v = 1;
+			videoSprite.volumeAdjust = v;
+		}
+
+		// Insert behind notes/strums
+		var insertBefore:FlxBasic = (strumLineNotes != null) ? strumLineNotes : null;
+		var insertIdx:Int = (insertBefore != null) ? members.indexOf(insertBefore) : -1;
+		if (insertIdx >= 0)
+			insert(insertIdx, videoSprite);
+		else
+			add(videoSprite);
+
+		var layoutVideo = function() {
+			try {
+				if (videoSprite == null || !videoSprite.exists) return;
+				if (FlxG.width <= 1 || FlxG.height <= 1) return;
+				var bmd = videoSprite.bitmap.bitmapData;
+				var srcW:Float = (bmd != null && bmd.width > 1) ? bmd.width : (videoSprite.width > 1 ? videoSprite.width : 1);
+				var srcH:Float = (bmd != null && bmd.height > 1) ? bmd.height : (videoSprite.height > 1 ? videoSprite.height : 1);
+				var sx:Float = FlxG.width / srcW;
+				var sy:Float = FlxG.height / srcH;
+				var scale:Float = (sx > sy ? sx : sy);
+				if (!(scale > 0)) scale = 1;
+				videoSprite.scale.set(scale, scale);
+				videoSprite.updateHitbox();
+				if (targetCam != camGame) {
+					videoSprite.x = (FlxG.width - videoSprite.width) * 0.5;
+					videoSprite.y = (FlxG.height - videoSprite.height) * 0.5;
+				} else {
+					videoSprite.x = 0;
+					videoSprite.y = 0;
+				}
+			} catch(e:Dynamic) {}
+		};
+
+		var pendingApply:Bool = false;
+		var alphaTweenedOnce:Bool = false;
+		var autoStateAppliedOnce:Bool = false;
+		var formatHandler:Void->Void = null;
+		formatHandler = function() {
+			if (pendingApply) return;
+			pendingApply = true;
+			// Wait one frame so FlxVideoSprite's own onFormatSetup handler (loadGraphic) runs first
+			new FlxTimer().start(0, function(_) {
+				pendingApply = false;
+				if (videoSprite == null || !videoSprite.exists) return;
+				layoutVideo();
+				var hadDesired:Bool = videoDesiredState.exists(tag);
+				var desired:String = hadDesired ? videoDesiredState.get(tag) : null;
+				if (desired == null && !autoStateAppliedOnce) {
+					autoStateAppliedOnce = true;
+					desired = wantsPauseOnReady ? 'paused' : 'playing';
+				}
+				if (!wantsPauseOnReady && desired != 'paused' && !alphaTweenedOnce && videoSprite.alpha <= 0) {
+					alphaTweenedOnce = true;
+					FlxTween.tween(videoSprite, {alpha: 1}, 0.08, {ease: FlxEase.quadOut});
+				}
+				switch (desired) {
+					case 'paused':
+						try { videoSprite.pause(); } catch(e:Dynamic) {}
+					case 'stopped':
+						cleanupManagedVideo(tag, videoSprite);
+						return;
+					case 'playing':
+						try { videoSprite.resume(); } catch(e:Dynamic) {}
+					default:
+				}
+				if (wantsPauseOnReady && videoSprite != null) {
+					if (desired == 'paused' && videoSprite.alpha <= 0.00002) videoSprite.alpha = 0;
+					else if (desired == 'playing' && videoSprite.alpha <= 0.00002) videoSprite.alpha = 1;
+				}
+				if (hadDesired) videoDesiredState.remove(tag);
+			});
+		};
+
+		var resizeHandler = function(w:Int, h:Int) { layoutVideo(); };
+		FlxG.signals.gameResized.add(resizeHandler);
+		videoFormatHandlers.set(tag, formatHandler);
+		videoResizeHandlers.set(tag, resizeHandler);
+		// Register AFTER sprite creation so our handler fires after the built-in loadGraphic handler
+		videoSprite.bitmap.onFormatSetup.add(formatHandler);
+
+		// End reached handler
+		var endReachedOnce:Bool = false;
+		var endHandler:Void->Void = null;
+		endHandler = function() {
+			if (endReachedOnce) return;
+			endReachedOnce = true;
+			new FlxTimer().start(0, function(_) {
+				cleanupManagedVideo(tag, videoSprite);
+			});
+		};
+		videoSprite.bitmap.onEndReached.add(endHandler);
+		videoEndHandlers.set(tag, endHandler);
+
+		// Store immediately so Lua can call pause/setAlpha etc. before play starts
+		videoSprites.set(tag, videoSprite);
+
+		new FlxTimer().start(0, function(_) {
+			if (videoSprite == null) return;
+			var desired = videoDesiredState.exists(tag) ? videoDesiredState.get(tag) : null;
+			if (desired == 'stopped') {
+				cleanupManagedVideo(tag, videoSprite);
+				return;
+			}
+			try {
+				if (videoSprite.load(filepath, null)) {
+					new FlxTimer().start(0.001, function(_) {
+						if (videoSprite == null || !videoSprite.exists) return;
+						var desired2 = videoDesiredState.exists(tag) ? videoDesiredState.get(tag) : null;
+						if (desired2 != 'stopped')
+							try { videoSprite.play(); } catch(e:Dynamic) {}
+					});
+				} else {
+					FlxG.log.warn('makeVideo: Failed to load: ' + name);
+					cleanupManagedVideo(tag, videoSprite);
+				}
+			} catch(e:Dynamic) {
+				cleanupManagedVideo(tag, videoSprite);
+			}
+		});
+	}
+
+	public function setPositionVideo(tag:String, x:Float, y:Float):Void
+	{
+		var spr = videoSprites.get(tag);
+		if (spr != null) { spr.x = x; spr.y = y; }
+	}
+
+	public function scaleVideo(tag:String, scaleX:Float, scaleY:Float):Void
+	{
+		var spr = videoSprites.get(tag);
+		if (spr != null) spr.scale.set(scaleX, scaleY);
+	}
+
+	public function pauseVideo(tag:String):Void
+	{
+		videoDesiredState.set(tag, 'paused');
+		var spr = videoSprites.get(tag);
+		if (spr != null) try { spr.pause(); } catch(e:Dynamic) {}
+	}
+
+	public function resumeVideo(tag:String):Void
+	{
+		videoDesiredState.set(tag, 'playing');
+		var spr = videoSprites.get(tag);
+		if (spr != null) {
+			spr.alpha = 1;
+			try { spr.resume(); } catch(e:Dynamic) {}
+		}
+	}
+
+	public function stopVideo(tag:String):Void
+	{
+		videoDesiredState.set(tag, 'stopped');
+		var spr = videoSprites.get(tag);
+		if (spr != null) cleanupManagedVideo(tag, spr);
+		videoDesiredVolume.remove(tag);
+	}
+
+	public function setVideoVolume(tag:String, vol:Float):Void
+	{
+		if (vol < 0) vol = 0; else if (vol > 1) vol = 1;
+		videoDesiredVolume.set(tag, vol);
+		var spr = videoSprites.get(tag);
+		if (spr != null)
+			spr.volumeAdjust = vol; // hxvlc: volumeAdjust is 0.0-1.0 float multiplier
+	}
+
+	public function setAlphaVideo(tag:String, alphaSet:Float):Void
+	{
+		var spr = videoSprites.get(tag);
+		if (spr != null) spr.alpha = alphaSet;
+	}
+
+	public function tweenAlphaVideo(twtag:String, tag:String, alphaSet:Float, timeSet:Float, easeSet:Null<flixel.tweens.EaseFunction>):Void
+	{
+		var spr = videoSprites.get(tag);
+		if (spr != null) {
+			var twn = FlxTween.tween(spr, {alpha: alphaSet}, timeSet, {
+				ease: easeSet,
+				onComplete: function(twn:FlxTween) {
+					PlayState.instance.callOnLuas('onTweenCompleted', [twtag]);
+					PlayState.instance.modchartTweens.remove(twtag);
+				}
+			});
+			PlayState.instance.modchartTweens.set(twtag, twn);
+		}
+	}
+	#end
+
+	// ==================== END MID-SONG VIDEO FUNCTIONS ====================
+
 
 	var dialogueCount:Int = 0;
 	public var psychDialogue:DialogueBoxPsych;
@@ -1335,6 +1677,7 @@ class PlayState extends MusicBeatState
 		var oldNote:Note = null;
 		var sectionsData:Array<SwagSection> = PlayState.SONG.notes;
 		var ghostNotesCaught:Int = 0;
+		var ghostNoteMap:Map<String, Note> = new Map<String, Note>();
 		var daBpm:Float = Conductor.bpm;
 	
 		for (section in sectionsData)
@@ -1354,22 +1697,21 @@ class PlayState extends MusicBeatState
 
 				var gottaHitNote:Bool = (songNotes[1] < totalColumns);
 
+				var ghostKey:String = '$spawnTime|$noteColumn|${gottaHitNote ? 1 : 0}|$noteType';
 				if (i != 0) {
-					// CLEAR ANY POSSIBLE GHOST NOTES
-					for (evilNote in unspawnNotes) {
-						var matches: Bool = (noteColumn == evilNote.noteData && gottaHitNote == evilNote.mustPress && evilNote.noteType == noteType);
-						if (matches && Math.abs(spawnTime - evilNote.strumTime) < flixel.math.FlxMath.EPSILON) {
-							if (evilNote.tail.length > 0)
-								for (tail in evilNote.tail)
-								{
-									tail.destroy();
-									unspawnNotes.remove(tail);
-								}
-							evilNote.destroy();
-							unspawnNotes.remove(evilNote);
-							ghostNotesCaught++;
-							//continue;
-						}
+					// CLEAR ANY POSSIBLE GHOST NOTES (O(1) HashMap lookup)
+					var evilNote:Note = ghostNoteMap.get(ghostKey);
+					if (evilNote != null) {
+						if (evilNote.tail.length > 0)
+							for (tail in evilNote.tail)
+							{
+								tail.destroy();
+								unspawnNotes.remove(tail);
+							}
+						evilNote.destroy();
+						unspawnNotes.remove(evilNote);
+						ghostNoteMap.remove(ghostKey);
+						ghostNotesCaught++;
 					}
 				}
 
@@ -1384,6 +1726,7 @@ class PlayState extends MusicBeatState
 				swagNote.scrollFactor.set();
 				unspawnNotes.push(swagNote);
 
+				ghostNoteMap.set(ghostKey, swagNote);
 				var curStepCrochet:Float = 60 / daBpm * 1000 / 4.0;
 				final roundSus:Int = Math.round(swagNote.sustainLength / curStepCrochet);
 				if(roundSus > 0)
@@ -1580,6 +1923,24 @@ class PlayState extends MusicBeatState
 			}
 			FlxTimer.globalManager.forEach(function(tmr:FlxTimer) if(!tmr.finished) tmr.active = false);
 			FlxTween.globalManager.forEach(function(twn:FlxTween) if(!twn.finished) twn.active = false);
+
+			for (tween in modchartTweens) if(tween != null && !tween.finished) tween.active = false;
+			for (timer in modchartTimers) if(timer != null && !timer.finished) timer.active = false;
+
+			#if (VIDEOS_ALLOWED && hxvlc)
+			// Pause any playing mid-song videos and record which ones we paused
+			// so closeSubState can resume only those (not ones that were already paused by Lua)
+			videoPausedBySubState.clear();
+			for (tag in videoSprites.keys()) {
+				var spr = videoSprites.get(tag);
+				if (spr == null) continue;
+				var desired:String = videoDesiredState.exists(tag) ? videoDesiredState.get(tag) : null;
+				// Only mark for resume if the video wasn't intentionally paused/stopped by script
+				if (desired != 'paused' && desired != 'stopped')
+					videoPausedBySubState.set(tag, true);
+				try { spr.pause(); } catch(e:Dynamic) {}
+			}
+			#end
 		}
 
 		super.openSubState(SubState);
@@ -1589,7 +1950,7 @@ class PlayState extends MusicBeatState
 	override function closeSubState()
 	{
 		super.closeSubState();
-		
+
 		stagesFunc(function(stage:BaseStage) stage.closeSubState());
 		if (paused)
 		{
@@ -1599,6 +1960,17 @@ class PlayState extends MusicBeatState
 			}
 			FlxTimer.globalManager.forEach(function(tmr:FlxTimer) if(!tmr.finished) tmr.active = true);
 			FlxTween.globalManager.forEach(function(twn:FlxTween) if(!twn.finished) twn.active = true);
+			for (tween in modchartTweens) if(tween != null && !tween.finished) tween.active = true;
+			for (timer in modchartTimers) if(timer != null && !timer.finished) timer.active = true;
+
+			#if (VIDEOS_ALLOWED && hxvlc)
+			// Resume only the videos that were playing before PauseSubState opened
+			for (tag in videoPausedBySubState.keys()) {
+				var spr = videoSprites.get(tag);
+				if (spr != null) try { spr.resume(); } catch(e:Dynamic) {}
+			}
+			videoPausedBySubState.clear();
+			#end
 
 			paused = false;
 			callOnScripts('onResume');
@@ -1821,9 +2193,22 @@ class PlayState extends MusicBeatState
 							{
 								if(cpuControlled && !daNote.blockHit && daNote.canBeHit && (daNote.isSustainNote || daNote.strumTime <= Conductor.songPosition))
 									goodNoteHit(daNote);
+								// CPU 조작 시 플레이어 홀드 스플래시
+								if(cpuControlled && daNote.isSustainNote && daNote.wasGoodHit)
+									holdSplashEffect.triggerSplash(false, daNote.noteData, daNote);
 							}
 							else if (daNote.wasGoodHit && !daNote.hitByOpponent && !daNote.ignoreNote)
 								opponentNoteHit(daNote);
+
+							// 오퍼넌트 홀드 스플래시 (hitByOpponent=true 이면 이미 처리된 sustain)
+							if (!daNote.mustPress && daNote.isSustainNote && daNote.hitByOpponent && !daNote.ignoreNote)
+							{
+								holdSplashEffect.triggerSplash(true, daNote.noteData, daNote);
+								if (daNote.animation.curAnim != null && StringTools.endsWith(daNote.animation.curAnim.name, 'end'))
+									holdSplashEffect.hideSplash(daNote.noteData, true);
+								else if (daNote.alpha == 0)
+									holdSplashEffect.hideSplash(daNote.noteData, true);
+							}
 
 							if(daNote.isSustainNote && strum.sustainReduce) daNote.clipToStrumNote(strum);
 
@@ -2796,6 +3181,7 @@ class PlayState extends MusicBeatState
 			spr.playAnim('static');
 			spr.resetAnim = 0;
 		}
+		holdSplashEffect.hideSplash(key, false);
 		callOnScripts('onKeyRelease', [key]);
 	}
 
@@ -2850,6 +3236,10 @@ class PlayState extends MusicBeatState
 						if (!released)
 							goodNoteHit(n);
 					}
+
+					// 수동 플레이어 홀드 스플래시: 키를 누르고 있는 동안 매 프레임 갱신
+					if (n != null && n.mustPress && n.isSustainNote && n.wasGoodHit && holdArray[n.noteData])
+						holdSplashEffect.triggerSplash(false, n.noteData, n);
 				}
 			}
 
@@ -2869,6 +3259,7 @@ class PlayState extends MusicBeatState
 	}
 
 	function noteMiss(daNote:Note):Void { //You didn't hit the key and let it go offscreen, also used by Hurt Notes
+		if (daNote.isSustainNote) holdSplashEffect.forceHideSplash(daNote.noteData, false);
 		//Dupe note remove
 		notes.forEachAlive(function(note:Note) {
 			if (daNote != note && daNote.mustPress && daNote.noteData == note.noteData && daNote.isSustainNote == note.isSustainNote && Math.abs(daNote.strumTime - note.strumTime) < 1)
@@ -3125,7 +3516,6 @@ class PlayState extends MusicBeatState
 	public function invalidateNote(note:Note):Void {
 		note.kill();
 		notes.remove(note, true);
-		note.destroy();
 	}
 
 	public function spawnNoteSplashOnNote(note:Note) {
@@ -3178,7 +3568,7 @@ class PlayState extends MusicBeatState
 			videoCutscene.destroy();
 			videoCutscene = null;
 		}
-		#end
+#end
 
 		FlxG.stage.removeEventListener(KeyboardEvent.KEY_DOWN, onKeyPress);
 		FlxG.stage.removeEventListener(KeyboardEvent.KEY_UP, onKeyRelease);
@@ -3190,6 +3580,11 @@ class PlayState extends MusicBeatState
 
 		Note.globalRgbShaders = [];
 		backend.NoteTypesConfig.clearNoteTypesData();
+
+		for (tween in modchartTweens) if(tween != null) { tween.cancel(); tween.destroy(); }
+		modchartTweens.clear();
+		for (timer in modchartTimers) if(timer != null) { timer.cancel(); timer.destroy(); }
+		modchartTimers.clear();
 
 		NoteSplash.configs.clear();
 		instance = null;
@@ -3321,7 +3716,20 @@ class PlayState extends MusicBeatState
 
 		if(FileSystem.exists(scriptToLoad))
 		{
-			if (Iris.instances.exists(scriptToLoad)) return false;
+			if (Iris.instances.exists(scriptToLoad))
+			{
+				// Check if this is a stale instance (in Iris.instances but not in our hscriptArray)
+				// This can happen if a previous initHScript threw a non-IrisError exception
+				var alreadyInArray:Bool = false;
+				for (s in hscriptArray)
+					if (s != null && s.filePath == scriptToLoad) { alreadyInArray = true; break; }
+
+				if (alreadyInArray) return false; // Legitimately already loaded
+
+				// Stale instance — clean it up and reload
+				var stale:HScript = cast (Iris.instances.get(scriptToLoad), HScript);
+				if (stale != null) stale.destroy();
+			}
 
 			initHScript(scriptToLoad);
 			return true;
@@ -3343,9 +3751,21 @@ class PlayState extends MusicBeatState
 		{
 			var pos:HScriptInfos = cast {fileName: file, showLine: false};
 			Iris.error(Printer.errorToString(e, false), pos);
-			var newScript:HScript = cast (Iris.instances.get(file), HScript);
-			if(newScript != null)
+			var staleScript:HScript = cast (Iris.instances.get(file), HScript);
+			if(staleScript != null) staleScript.destroy();
+		}
+		catch(e:Dynamic)
+		{
+			// Non-IrisError exception (e.g. haxe.Exception from script code)
+			// Must clean up or the stale Iris instance will block future loads
+			trace('HScript init error (non-IrisError): $file\n$e');
+			if (newScript != null)
 				newScript.destroy();
+			else
+			{
+				var staleScript:HScript = cast (Iris.instances.get(file), HScript);
+				if (staleScript != null) staleScript.destroy();
+			}
 		}
 	}
 	#end

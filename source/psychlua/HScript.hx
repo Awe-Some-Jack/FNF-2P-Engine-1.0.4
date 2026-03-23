@@ -180,6 +180,10 @@ class HScript extends Iris
 		set('FlxAnimate', FlxAnimate);
 		#end
 
+		set('CoolUtil', backend.CoolUtil);
+		set('LuaUtils', psychlua.LuaUtils);
+		set('MusicBeatState', backend.MusicBeatState);
+
 		// Functions & Variables
 		set('setVar', function(name:String, value:Dynamic) {
 			MusicBeatState.getVariables().set(name, value);
@@ -397,6 +401,15 @@ class HScript extends Iris
 			if (c == null)
 				c = Type.resolveEnum(str + libName);
 
+			if (c == null && str.length == 0) {
+				var fallbackPackages:Array<String> = ['backend.', 'states.', 'objects.', 'psychlua.', 'shaders.', 'substates.'];
+				for (pkg in fallbackPackages) {
+					c = Type.resolveClass(pkg + libName);
+					if (c == null) c = Type.resolveEnum(pkg + libName);
+					if (c != null) break;
+				}
+			}
+
 			if (funk.hscript == null)
 				initHaxeModule(funk);
 
@@ -583,6 +596,11 @@ class CustomInterp extends crowplexus.hscript.Interp
 			var v = Reflect.getProperty(parentInstance, id);
 			return v;
 		}
+
+		// Cross-script variable sharing: check shared variable pool set by setVar() in any script
+		var sharedVars = backend.MusicBeatState.getVariables();
+		if (sharedVars != null && sharedVars.exists(id))
+			return sharedVars.get(id);
 
 		error(EUnknownVariable(id));
 

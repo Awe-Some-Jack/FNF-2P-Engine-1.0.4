@@ -10,7 +10,7 @@ class ShaderFunctions
 	{
 		var lua = funk.lua;
 		// shader shit
-		funk.addLocalCallback("initLuaShader", function(name:String) {
+		Lua_helper.add_callback(lua, "initLuaShader", function(name:String) {
 			if(!ClientPrefs.data.shaders) return false;
 
 			#if (!flash && MODS_ALLOWED && sys)
@@ -20,8 +20,8 @@ class ShaderFunctions
 			#end
 			return false;
 		});
-		
-		funk.addLocalCallback("setSpriteShader", function(obj:String, shader:String) {
+
+		Lua_helper.add_callback(lua, "setSpriteShader", function(obj:String, shader:String) {
 			if(!ClientPrefs.data.shaders) return false;
 
 			#if (!flash && sys)
@@ -39,6 +39,9 @@ class ShaderFunctions
 
 			if(leObj != null) {
 				var arr:Array<String> = funk.runtimeShaders.get(shader);
+				var leObjDyn:Dynamic = leObj;
+				if(Reflect.hasField(leObjDyn, 'useRGBShader'))
+					Reflect.setProperty(leObjDyn, 'useRGBShader', false);
 				leObj.shader = new shaders.ErrorHandledShader.ErrorHandledRuntimeShader(shader, arr[0], arr[1]);
 				return true;
 			}
@@ -55,6 +58,9 @@ class ShaderFunctions
 			}
 
 			if(leObj != null) {
+				var leObjDyn:Dynamic = leObj;
+				if(Reflect.hasField(leObjDyn, 'useRGBShader'))
+					Reflect.setProperty(leObjDyn, 'useRGBShader', true);
 				leObj.shader = null;
 				return true;
 			}
@@ -278,7 +284,9 @@ class ShaderFunctions
 			FunkinLua.luaTrace('Error on getting shader: Object $obj not found', false, false, FlxColor.RED);
 			return null;
 		}
-		return cast (target.shader, FlxRuntimeShader);
+		var sh = target.shader;
+		if (!(sh is FlxRuntimeShader)) return null;
+		return cast sh;
 	}
 	#end
 }

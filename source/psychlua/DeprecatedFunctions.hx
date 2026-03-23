@@ -157,5 +157,48 @@ class DeprecatedFunctions
 			Reflect.getProperty(LuaUtils.getTargetInstance(), group)[index].updateHitbox();
 			FunkinLua.luaTrace('updateHitboxFromGroup is deprecated! Use updateHitbox instead.', false, true);
 		});
+
+		Lua_helper.add_callback(lua, "getScore", function() {
+			FunkinLua.luaTrace("getScore is deprecated! Use getProperty('songScore') instead", false, true);
+			return PlayState.instance.songScore;
+		});
+		Lua_helper.add_callback(lua, "getMisses", function() {
+			FunkinLua.luaTrace("getMisses is deprecated! Use getProperty('songMisses') instead", false, true);
+			return PlayState.instance.songMisses;
+		});
+		Lua_helper.add_callback(lua, "getHits", function() {
+			FunkinLua.luaTrace("getHits is deprecated! Use getProperty('songHits') instead", false, true);
+			return PlayState.instance.songHits;
+		});
+		Lua_helper.add_callback(lua, "changePresence", function(details:String, state:Null<String>, ?smallImageKey:String, ?hasStartTimestamp:Bool, ?endTimestamp:Float) {
+			FunkinLua.luaTrace("changePresence is deprecated! Use changeDiscordPresence instead", false, true);
+			#if DISCORD_ALLOWED
+			DiscordClient.changePresence(details, state, smallImageKey, hasStartTimestamp, endTimestamp);
+			#end
+		});
+		Lua_helper.add_callback(lua, "getGlobalFromScript", function(luaFile:String, global:String) {
+			FunkinLua.luaTrace("getGlobalFromScript is deprecated! Use callOnLuas/setOnLuas instead", false, true);
+			if (luaFile == null || global == null) return null;
+			var cervix:String = luaFile.endsWith('.lua') ? luaFile : (luaFile + '.lua');
+			for (luaInstance in PlayState.instance.luaArray) {
+				if (luaInstance.scriptName == cervix || luaInstance.scriptName.endsWith('/' + cervix)) {
+					Lua.getglobal(luaInstance.lua, global);
+					var result:Dynamic = cast Convert.fromLua(luaInstance.lua, -1);
+					Lua.pop(luaInstance.lua, 1);
+					return result;
+				}
+			}
+			return null;
+		});
+		Lua_helper.add_callback(lua, "setGlobalFromScript", function(luaFile:String, global:String, val:Dynamic) {
+			FunkinLua.luaTrace("setGlobalFromScript is deprecated! Use callOnLuas/setOnLuas instead", false, true);
+			if (luaFile == null || global == null) return;
+			var cervix:String = luaFile.endsWith('.lua') ? luaFile : (luaFile + '.lua');
+			for (luaInstance in PlayState.instance.luaArray) {
+				if (luaInstance.scriptName == cervix || luaInstance.scriptName.endsWith('/' + cervix)) {
+					luaInstance.set(global, val);
+				}
+			}
+		});
 	}
 }

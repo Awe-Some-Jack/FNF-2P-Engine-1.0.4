@@ -27,6 +27,7 @@ typedef SwagSong =
 	@:optional var gameOverEnd:String;
 	
 	@:optional var disableNoteRGB:Bool;
+	@:optional var disableSplashRGB:Bool;
 
 	@:optional var arrowSkin:String;
 	@:optional var splashSkin:String;
@@ -57,6 +58,7 @@ class Song
 	public var gameOverLoop:String;
 	public var gameOverEnd:String;
 	public var disableNoteRGB:Bool = false;
+	public var disableSplashRGB:Bool = false;
 	public var speed:Float = 1;
 	public var stage:String;
 	public var player1:String = 'bf';
@@ -181,6 +183,12 @@ class Song
 					}
 			}
 		}
+
+		if(songJson.arrowSkin != null && songJson.arrowSkin.length > 0 && songJson.arrowSkin.indexOf('/') < 0)
+			songJson.arrowSkin = 'noteSkins/' + songJson.arrowSkin;
+		if(songJson.splashSkin != null && songJson.splashSkin.length > 0 && songJson.splashSkin.indexOf('/') < 0)
+			songJson.splashSkin = 'noteSplashes/' + songJson.splashSkin;
+
 		return songJson;
 	}
 }

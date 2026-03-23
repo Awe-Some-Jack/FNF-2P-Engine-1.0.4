@@ -723,9 +723,11 @@ class FunkinLua {
 		});
 
 		// others
-		Lua_helper.add_callback(lua, "triggerEvent", function(name:String, ?value1:String = '', ?value2:String = '') {
-			game.triggerEvent(name, value1, value2, Conductor.songPosition);
-			//trace('Triggered event: ' + name + ', ' + value1 + ', ' + value2);
+		Lua_helper.add_callback(lua, "triggerEvent", function(name:String, ?value1:Dynamic = null, ?value2:Dynamic = null) {
+			var v1:String = (value1 != null) ? Std.string(value1) : '';
+			var v2:String = (value2 != null) ? Std.string(value2) : '';
+			game.triggerEvent(name, v1, v2, Conductor.songPosition);
+			//trace('Triggered event: ' + name + ', ' + v1 + ', ' + v2);
 			return true;
 		});
 
@@ -1311,6 +1313,86 @@ class FunkinLua {
 			#end
 		});
 
+		// ==================== MID-SONG VIDEO CALLBACKS (hxvlc) ====================
+		Lua_helper.add_callback(lua, "precacheVideo", function(name:String, ?tag:String) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			if (FileSystem.exists(Paths.video(name))) {
+				if (tag == null || tag.length == 0) tag = name;
+				game.precacheVideo(name, tag);
+				return true;
+			} else {
+				luaTrace('precacheVideo: Video file not found: ' + name, false, false, FlxColor.RED);
+			}
+			return false;
+			#else
+			return false;
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "makeVideo", function(name:String, tag:String, camera:String, ?pauseOnReady:Bool = false) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			if (FileSystem.exists(Paths.video(name))) {
+				if (tag == null || tag.length == 0) tag = name;
+				game.makeVideo(name, tag, LuaUtils.cameraFromString(camera), pauseOnReady);
+				return true;
+			} else {
+				luaTrace('makeVideo: Video file not found: ' + name, false, false, FlxColor.RED);
+			}
+			return false;
+			#else
+			return false;
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "setPositionVideo", function(tag:String, x:Float, y:Float) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			game.setPositionVideo(tag, x, y);
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "scaleVideo", function(tag:String, scaleX:Float, scaleY:Float) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			game.scaleVideo(tag, scaleX, scaleY);
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "pauseVideo", function(tag:String) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			game.pauseVideo(tag);
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "stopVideo", function(tag:String) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			game.stopVideo(tag);
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "resumeVideo", function(tag:String) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			game.resumeVideo(tag);
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "setVideoVolume", function(tag:String, vol:Float) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			game.setVideoVolume(tag, vol);
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "setAlphaVideo", function(tag:String, alphaSet:Float) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			game.setAlphaVideo(tag, alphaSet);
+			#end
+		});
+
+		Lua_helper.add_callback(lua, "tweenAlphaVideo", function(twtag:String, videotag:String, alphaSet:Float, timeSet:Float, easeSet:String) {
+			#if (VIDEOS_ALLOWED && hxvlc)
+			game.tweenAlphaVideo(twtag, videotag, alphaSet, timeSet, getFlxEaseByString(easeSet));
+			#end
+		});
+		// ==================== END MID-SONG VIDEO CALLBACKS ====================
+
 		Lua_helper.add_callback(lua, "playMusic", function(sound:String, ?volume:Float = 1, ?loop:Bool = false) {
 			FlxG.sound.playMusic(Paths.music(sound), volume, loop);
 		});
@@ -1799,6 +1881,10 @@ class FunkinLua {
 		Lua_helper.add_callback(lua, name, null); //just so that it gets called
 	}
 
+	public function getFlxEaseByString(?ease:String = ''):Dynamic {
+		return LuaUtils.getTweenEaseByString(ease);
+	}
+
 	#if (!flash && sys)
 	public var runtimeShaders:Map<String, Array<String>> = new Map<String, Array<String>>();
 	#end
@@ -1852,6 +1938,8 @@ class FunkinLua {
 				if(found)
 				{
 					runtimeShaders.set(name, [frag, vert]);
+					if(PlayState.instance != null)
+						PlayState.instance.runtimeShaders.set(name, [frag, vert]);
 					//trace('Found shader $name!');
 					return true;
 				}

@@ -83,6 +83,28 @@ class ClientPrefs {
 	public static var data:SaveVariables = {};
 	public static var defaultData:SaveVariables = {};
 
+	public static var camZooms(get, set):Bool;
+	static function get_camZooms():Bool return data.camZooms;
+	static function set_camZooms(v:Bool):Bool return data.camZooms = v;
+	public static var shaders(get, set):Bool;
+	static function get_shaders():Bool return data.shaders;
+	static function set_shaders(v:Bool):Bool return data.shaders = v;
+	public static var lowQuality(get, set):Bool;
+	static function get_lowQuality():Bool return data.lowQuality;
+	static function set_lowQuality(v:Bool):Bool return data.lowQuality = v;
+	public static var antialiasing(get, set):Bool;
+	static function get_antialiasing():Bool return data.antialiasing;
+	static function set_antialiasing(v:Bool):Bool return data.antialiasing = v;
+	public static var framerate(get, set):Int;
+	static function get_framerate():Int return data.framerate;
+	static function set_framerate(v:Int):Int return data.framerate = v;
+	public static var healthBarAlpha(get, set):Float;
+	static function get_healthBarAlpha():Float return data.healthBarAlpha;
+	static function set_healthBarAlpha(v:Float):Float return data.healthBarAlpha = v;
+	public static var downScroll(get, set):Bool;
+	static function get_downScroll():Bool return data.downScroll;
+	static function set_downScroll(v:Bool):Bool return data.downScroll = v;
+
 	//Every key has two binds, add your key bind down here and then add your control on options/ControlsSubState.hx and Controls.hx
 	public static var keyBinds:Map<String, Array<FlxKey>> = [
 		//Key Bind, Name for ControlsSubState
