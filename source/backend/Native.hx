@@ -22,9 +22,9 @@ import flixel.util.FlxColor;
 #define attributeDarkMode 20
 #define attributeDarkModeFallback 19
 
-#define attributeCaptionColor 34
-#define attributeTextColor 35
-#define attributeBorderColor 36
+#define attributeBorderColor 34
+#define attributeCaptionColor 35
+#define attributeTextColor 36
 
 struct HandleData {
 	DWORD pid = 0;
@@ -79,6 +79,53 @@ class Native
 				#endif
 			);
 			#endif
+		');
+		#end
+	}
+
+	public static function setWindowCaptionColor(r:Int, g:Int, b:Int):Void
+	{
+		#if (cpp && windows)
+		untyped __cpp__('
+			getHandle();
+			if (curHandle != (HWND)0) {
+				COLORREF col = RGB({0}, {1}, {2});
+				DwmSetWindowAttribute(curHandle, attributeCaptionColor, &col, sizeof(COLORREF));
+				DwmSetWindowAttribute(curHandle, attributeBorderColor, &col, sizeof(COLORREF));
+			}
+		', r, g, b);
+		#end
+	}
+
+	public static function applyWindowColorMode(mode:String):Void
+	{
+		setWindowDarkMode(mode == 'Dark');
+	}
+
+	public static function setWindowDarkMode(dark:Bool):Void
+	{
+		#if (cpp && windows)
+		untyped __cpp__('
+			getHandle();
+			if (curHandle != (HWND)0) {
+				BOOL val = {0} ? TRUE : FALSE;
+				DwmSetWindowAttribute(curHandle, attributeDarkMode, &val, sizeof(BOOL));
+				DwmSetWindowAttribute(curHandle, attributeDarkModeFallback, &val, sizeof(BOOL));
+			}
+		', dark);
+		#end
+	}
+
+	public static function resetWindowCaptionColor():Void
+	{
+		#if (cpp && windows)
+		untyped __cpp__('
+			getHandle();
+			if (curHandle != (HWND)0) {
+				COLORREF col = 0xFFFFFFFF;
+				DwmSetWindowAttribute(curHandle, attributeCaptionColor, &col, sizeof(COLORREF));
+				DwmSetWindowAttribute(curHandle, attributeBorderColor, &col, sizeof(COLORREF));
+			}
 		');
 		#end
 	}

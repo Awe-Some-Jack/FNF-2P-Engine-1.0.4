@@ -5,6 +5,7 @@ import backend.ui.PsychUIBox.UIStyleData;
 class PsychUIButton extends FlxSpriteGroup
 {
 	public static final CLICK_EVENT = 'button_click';
+	public static var defaultFont:String = null;
 
 	public var name:String;
 	public var label(default, set):String;
@@ -40,6 +41,7 @@ class PsychUIButton extends FlxSpriteGroup
 
 		text = new FlxText(0, 0, 1, '');
 		text.alignment = CENTER;
+		if (defaultFont != null) text.font = defaultFont;
 		add(text);
 		resize(wid, hei);
 		this.label = label;

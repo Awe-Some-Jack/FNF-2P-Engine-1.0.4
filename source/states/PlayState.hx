@@ -291,6 +291,10 @@ class PlayState extends MusicBeatState
 
 	override public function create()
 	{
+		#if (cpp && windows)
+		backend.AmbientMode.isInPlayState = true;
+		#end
+
 		//trace('Playback Rate: ' + playbackRate);
 		_scriptDirCache = null;
 		_lastLoadedModDirectory = Mods.currentModDirectory;
@@ -3534,6 +3538,10 @@ class PlayState extends MusicBeatState
 	}
 
 	override function destroy() {
+		#if (cpp && windows)
+		backend.AmbientMode.reset();
+		#end
+
 		if (psychlua.CustomSubstate.instance != null)
 		{
 			closeSubState();

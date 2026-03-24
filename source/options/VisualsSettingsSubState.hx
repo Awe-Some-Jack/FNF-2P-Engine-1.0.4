@@ -160,6 +160,23 @@ class VisualsSettingsSubState extends BaseOptionsMenu
 			BOOL);
 		addOption(option);
 
+		#if (cpp && windows)
+		var option:Option = new Option('Ambient Mode',
+			'If checked, the window title bar and border color\nwill dynamically change to match the on-screen colors!\n(Windows 11 only)',
+			'ambientMode',
+			BOOL);
+		addOption(option);
+		option.onChange = onChangeAmbientMode;
+
+		var option:Option = new Option('Window Color Mode:',
+			'Set the window title bar style.\nDark = dark title bar (white text)\nLight = bright title bar (black text)\nSystem = default',
+			'windowColorMode',
+			STRING,
+			['System', 'Dark', 'Light']);
+		addOption(option);
+		option.onChange = onChangeWindowColorMode;
+		#end
+
 		super();
 		add(notes);
 		add(splashes);
@@ -279,6 +296,19 @@ class VisualsSettingsSubState extends BaseOptionsMenu
 				splash.animation.curAnim.frameRate = FlxG.random.int(minFps, maxFps);
 		}
 	}
+
+	#if (cpp && windows)
+	function onChangeAmbientMode()
+	{
+		if (!ClientPrefs.data.ambientMode)
+			backend.AmbientMode.reset();
+	}
+
+	function onChangeWindowColorMode()
+	{
+		backend.Native.applyWindowColorMode(ClientPrefs.data.windowColorMode);
+	}
+	#end
 
 	override function destroy()
 	{

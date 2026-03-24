@@ -5,6 +5,8 @@ import flixel.math.FlxPoint;
 
 class PsychUITab extends FlxSprite
 {
+	public static var defaultFont:String = null;
+
 	public var name(default, set):String;
 	public var text:FlxText;
 	public var menu:FlxSpriteGroup = new FlxSpriteGroup();
@@ -19,6 +21,7 @@ class PsychUITab extends FlxSprite
 		@:bypassAccessor this.name = name;
 		text = new FlxText(0, 0, 100, name);
 		text.alignment = CENTER;
+		if (defaultFont != null) text.font = defaultFont;
 	}
 
 	override function draw()

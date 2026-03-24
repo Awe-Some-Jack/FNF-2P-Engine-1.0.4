@@ -68,7 +68,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 {
 	public static final defaultEvents:Array<Array<String>> =
 	[
-		['', "Nothing. Yep, that's right."], //Always leave this one empty pls
+		['', "Nothing.. Kinda feel sad ;-; -2P-"], //Always leave this one empty pls
 		['Dadbattle Spotlight', "Used in Dad Battle,\nValue 1: 0/1 = ON/OFF,\n2 = Target Dad\n3 = Target BF"],
 		['Hey!', "Plays the \"Hey!\" animation from Bopeebo,\nValue 1: BF = Only Boyfriend, GF = Only Girlfriend,\nSomething else = Both.\nValue 2: Custom animation duration,\nleave it blank for 0.6s"],
 		['Set GF Speed', "Sets GF head bopping speed,\nValue 1: 1 = Normal speed,\n2 = 1/2 speed, 4 = 1/4 speed etc.\nUsed on Fresh during the beatbox parts.\n\nWarning: Value must be integer!"],
@@ -211,6 +211,135 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 	var tipBg:FlxSprite;
 	var fullTipText:FlxText;
+	var tipText:FlxText;
+	var tipTextKorean:Bool = false;
+	final _koFont:String = Paths.font('DungGeunMo.ttf');
+	final _koTextSizeBoost:Int = 2;
+	var _baseTextSizes:Map<Int, Int> = new Map();
+
+	// UI Translation Registry: {t: 0=FlxText 1=Button 2=CheckBox, r: ref, e: English, k: Korean}
+	var _uiReg:Array<{t:Int, r:Dynamic, e:String, k:String}> = [];
+	inline function _rT(txt:FlxText, e:String, ko:String):FlxText {
+		_uiReg.push({t:0, r:txt, e:e, k:ko});
+		return txt;
+	}
+	inline function _rB(btn:PsychUIButton, e:String, ko:String):PsychUIButton {
+		_uiReg.push({t:1, r:btn, e:e, k:ko});
+		return btn;
+	}
+	inline function _rC(chk:PsychUICheckBox, e:String, ko:String):PsychUICheckBox {
+		_uiReg.push({t:2, r:chk, e:e, k:ko});
+		return chk;
+	}
+	inline function _applyTextStyle(txt:FlxText, korean:Bool):Void {
+		if (txt == null) return;
+		var id = txt.ID;
+		// If ID is default (0), we need to assign a unique one to track base size
+		if (id <= 0) {
+			// Search if this text is already in our registry to give it a consistent ID
+			var found = false;
+			for (i in 0..._uiReg.length) {
+				var item = _uiReg[i];
+				if (item.r == txt || (Std.isOfType(item.r, PsychUIButton) && cast(item.r, PsychUIButton).text == txt) || (Std.isOfType(item.r, PsychUICheckBox) && cast(item.r, PsychUICheckBox).text == txt)) {
+					txt.ID = i + 100;
+					found = true;
+					break;
+				}
+			}
+			if (!found) txt.ID = FlxG.random.int(1000, 9000); // Fallback unique ID
+			id = txt.ID;
+		}
+		
+		if (!_baseTextSizes.exists(id))
+			_baseTextSizes.set(id, txt.size);
+
+		var base = _baseTextSizes.get(id);
+		var target = korean ? base + _koTextSizeBoost : base;
+		txt.font = korean ? _koFont : null;
+		if (txt.size != target) txt.size = target;
+	}
+	inline function _applyButtonStyle(btn:PsychUIButton, korean:Bool):Void {
+		if (btn == null || btn.text == null) return;
+		_applyTextStyle(btn.text, korean);
+		btn.resize(Std.int(btn.bg.width), Std.int(btn.bg.height));
+	}
+	inline function _applyCheckBoxStyle(chk:PsychUICheckBox, korean:Bool):Void {
+		if (chk == null || chk.text == null) return;
+		_applyTextStyle(chk.text, korean);
+		chk.text.y = chk.box.y + chk.box.height/2 - chk.text.height/2;
+	}
+	function _applyLang(korean:Bool):Void {
+		PsychUITab.defaultFont = korean ? _koFont : null;
+		PsychUIButton.defaultFont = korean ? _koFont : null;
+		PsychUICheckBox.defaultFont = korean ? _koFont : null;
+		for (item in _uiReg) {
+			var s = korean ? item.k : item.e;
+			switch (item.t) {
+				case 0:
+					var t = cast(item.r, FlxText);
+					t.text = s;
+					_applyTextStyle(t, korean);
+				case 1:
+					var b = cast(item.r, PsychUIButton);
+					b.label = s;
+					_applyButtonStyle(b, korean);
+				case 2:
+					var c = cast(item.r, PsychUICheckBox);
+					c.label = s;
+					_applyCheckBoxStyle(c, korean);
+			}
+		}
+		// Tab names
+		var mainTabs_en = ['Charting','Data','Events','Note','Section','Song'];
+		var mainTabs_ko = ['채보 설정','데이터','이벤트','노트','섹션','곡 설정'];
+		for (i in 0...mainBox.tabs.length)
+			mainBox.tabs[i].name = korean ? mainTabs_ko[i] : mainTabs_en[i];
+		var upperTabs_en = ['File','Edit','View'];
+		var upperTabs_ko = ['파일','편집','보기'];
+		for (i in 0...upperBox.tabs.length) {
+			upperBox.tabs[i].name = korean ? upperTabs_ko[i] : upperTabs_en[i];
+			_applyTextStyle(upperBox.tabs[i].text, korean);
+		}
+		for (i in 0...mainBox.tabs.length)
+			_applyTextStyle(mainBox.tabs[i].text, korean);
+		infoBox.tabs[0].name = korean ? '정보' : 'Information';
+		_applyTextStyle(infoBox.tabs[0].text, korean);
+		// Playback slider
+		if (playbackSlider != null)
+			playbackSlider.label = korean ? '재생 속도' : 'Playback Rate';
+		// Vortex editor button (state-dependent)
+		if (vortexEditorButton != null)
+		{
+			vortexEditorButton.label = vortexEnabled
+				? (korean ? '  보텍스 에디터 켜짐' : '  Vortex Editor ON')
+				: (korean ? '  보텍스 에디터 꺼짐' : '  Vortex Editor OFF');
+			_applyButtonStyle(vortexEditorButton, korean);
+		}
+		// Lock events button (state-dependent)
+		if (editLockEventsBtn != null)
+		{
+			editLockEventsBtn.label = lockedEvents
+				? (korean ? '  이벤트 잠금 해제' : '  Unlock Events')
+				: (korean ? '  이벤트 잠금' : '  Lock Events');
+			_applyButtonStyle(editLockEventsBtn, korean);
+		}
+		// Song tab (already handled but consolidate here)
+		updateSongTabLanguage(korean);
+		updateGridVisibility();
+		// tipText
+		if (tipText != null) {
+			tipText.text = korean ? 'F1: 도움말  K: 언어전환' : 'F1: Help  K: Language';
+			tipText.setFormat(korean ? _koFont : null, korean ? 18 : 16, FlxColor.WHITE, RIGHT);
+		}
+		if (fullTipText != null) {
+			fullTipText.text = getTipText(korean);
+			fullTipText.setFormat(korean ? _koFont : null, korean ? 20 : 18, FlxColor.WHITE, CENTER);
+			fullTipText.screenCenter();
+		}
+	}
+
+	// Edit tab lock events button (needs state-dependent translation)
+	var editLockEventsBtn:PsychUIButton;
 	
 	var vortexEnabled:Bool = false;
 	var waveformEnabled:Bool = false;
@@ -220,6 +349,10 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 	{
 		if(Difficulty.list.length < 1) Difficulty.resetList();
 		_keysPressedBuffer.resize(keysArray.length);
+
+		PsychUITab.defaultFont = null;
+		PsychUIButton.defaultFont = null;
+		PsychUICheckBox.defaultFont = null;
 
 		if(_shouldReset) Conductor.songPosition = 0;
 		persistentUpdate = false;
@@ -402,7 +535,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		if(chartEditorSave.data.infoBoxPosition != null && chartEditorSave.data.infoBoxPosition.length > 1)
 			infoBox.setPosition(chartEditorSave.data.infoBoxPosition[0], chartEditorSave.data.infoBoxPosition[1]);
 
-		upperBox = new PsychUIBox(40, 40, 330, 300, ['File', 'Edit', 'View']);
+		upperBox = new PsychUIBox(40, 40, 400, 300, ['File', 'Edit', 'View']);
 		upperBox.scrollFactor.set();
 		upperBox.isMinimized = true;
 		upperBox.minimizeOnFocusLost = true;
@@ -473,7 +606,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		stageDropDown.list = loadFileList('stages/', 'data/stageList.txt');
 		onChartLoaded();
 
-		var tipText:FlxText = new FlxText(FlxG.width - 210, FlxG.height - 30, 200, 'Press F1 for Help', 20);
+		tipText = new FlxText(FlxG.width - 250, FlxG.height - 50, 240, 'F1: Help  K: Language', 20);
 		tipText.cameras = [camUI];
 		tipText.setFormat(null, 16, FlxColor.WHITE, RIGHT);
 		tipText.borderColor = FlxColor.BLACK;
@@ -488,47 +621,19 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		tipBg.updateHitbox();
 		tipBg.scrollFactor.set();
 		tipBg.visible = tipBg.active = false;
-		tipBg.alpha = 0.6;
+		tipBg.alpha = 0.8;
 		add(tipBg);
 		
-		fullTipText = new FlxText(0, 0, FlxG.width - 200);
-		fullTipText.setFormat(Paths.font('vcr.ttf'), 24, FlxColor.WHITE, CENTER);
+		fullTipText = new FlxText(0, 0, FlxG.width - 40);
+		fullTipText.setFormat(null, 18, FlxColor.WHITE, CENTER);
 		fullTipText.cameras = [camUI];
 		fullTipText.scrollFactor.set();
 		fullTipText.visible = fullTipText.active = false;
-		fullTipText.text = [
-			"W/S/Mouse Wheel - Move Conductor's Time",
-			"A/D - Change Sections",
-			"Q/E - Decrease/Increase Note Sustain Length",
-			"Hold Shift/Alt to Increase/Decrease move by 4x",
-			"",
-			"F12 - Preview Chart",
-			"Enter - Playtest Chart",
-			"Space - Stop/Resume song",
-			"",
-			"Alt + Click - Select Note(s)",
-			"Shift + Click - Select/Unselect Note(s)",
-			"Right Click - Selection Box",
-			"",
-			"R - Reset Section",
-			"Shift + R - Go Back to the Start of the Song",
-			"Z/X - Zoom in/out",
-			"Left/Right - Change Snap",
-			#if FLX_PITCH
-			"Left Bracket / Right Bracket - Change Song Playback Rate",
-			"ALT + Left Bracket / Right Bracket - Reset Song Playback Rate",
-			#end
-			"",
-			"Ctrl + Z - Undo",
-			"Ctrl + Y - Redo",
-			"Ctrl + X - Cut Selected Notes",
-			"Ctrl + C - Copy Selected Notes",
-			"Ctrl + V - Paste Copied Notes",
-			"Ctrl + A - Select all in current Section",
-			"Ctrl + S - Quicksave",
-		].join('\n');
+		fullTipText.text = getTipText(false);
 		fullTipText.screenCenter();
 		add(fullTipText);
+
+		_applyLang(tipTextKorean);
 		super.create();
 	}
 
@@ -671,6 +776,89 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 	var backupLimit:Int = 10;
 
 	var lastBeatHit:Int = 0;
+
+	function getTipText(korean:Bool):String {
+		return korean ? [
+			"W/S/마우스 휠 - 타임라인 이동",
+			"A/D - 섹션 변경",
+			"Q/E - 노트 지속 시간 감소/증가",
+			"Shift/Alt 유지 - 이동량 4배 감소/증가",
+			"",
+			"F12 - 채보 미리보기",
+			"Enter - 채보 테스트 플레이",
+			"Space - 노래 정지/재개",
+			"",
+			"Alt + 클릭 - 노트 선택",
+			"Shift + 클릭 - 노트 선택/해제",
+			"우클릭 - 선택 박스",
+			"",
+			"R - 현재 섹션 초기화",
+			"Shift + R - 곡 처음으로 이동",
+			"Z/X - 확대/축소",
+			"좌/우 방향키 - 스냅 변경",
+			#if FLX_PITCH
+			"[ / ] - 곡 재생 속도 변경",
+			"ALT + [ / ] - 곡 재생 속도 초기화",
+			#end
+			"",
+			"Ctrl + Z - 실행 취소",
+			"Ctrl + Y - 다시 실행",
+			"Ctrl + X - 선택 노트 잘라내기",
+			"Ctrl + C - 선택 노트 복사",
+			"Ctrl + V - 복사한 노트 붙여넣기",
+			"Ctrl + A - 현재 섹션 전체 선택",
+			"Ctrl + S - 빠른 저장",
+			"",
+			"[K - 영어로 전환]",
+		].join('\n') : [
+			"W/S/Mouse Wheel - Move Conductor's Time",
+			"A/D - Change Sections",
+			"Q/E - Decrease/Increase Note Sustain Length",
+			"Hold Shift/Alt to Increase/Decrease move by 4x",
+			"",
+			"F12 - Preview Chart",
+			"Enter - Playtest Chart",
+			"Space - Stop/Resume song",
+			"",
+			"Alt + Click - Select Note(s)",
+			"Shift + Click - Select/Unselect Note(s)",
+			"Right Click - Selection Box",
+			"",
+			"R - Reset Section",
+			"Shift + R - Go Back to the Start of the Song",
+			"Z/X - Zoom in/out",
+			"Left/Right - Change Snap",
+			#if FLX_PITCH
+			"Left Bracket / Right Bracket - Change Song Playback Rate",
+			"ALT + Left Bracket / Right Bracket - Reset Song Playback Rate",
+			#end
+			"",
+			"Ctrl + Z - Undo",
+			"Ctrl + Y - Redo",
+			"Ctrl + X - Cut Selected Notes",
+			"Ctrl + C - Copy Selected Notes",
+			"Ctrl + V - Paste Copied Notes",
+			"Ctrl + A - Select all in current Section",
+			"Ctrl + S - Quicksave",
+			"",
+			"[K - Switch to Korean]",
+		].join('\n');
+	}
+
+	function updateSongTabLanguage(korean:Bool):Void {
+		if (songNameLabel == null) return;
+		songNameLabel.text    = korean ? '곡 이름:'           : 'Song Name:';
+		bpmLabel.text         = 'BPM:';
+		scrollSpeedLabel.text = korean ? '스크롤 속도:'       : 'Scroll Speed:';
+		audioOffsetLabel.text = korean ? '오디오 오프셋 (ms):' : 'Audio Offset (ms):';
+		stageLabel.text       = korean ? '스테이지:'          : 'Stage:';
+		playerLabel.text      = korean ? '플레이어:'          : 'Player:';
+		opponentLabel.text    = korean ? '상대방:'            : 'Opponent:';
+		girlfriendLabel.text  = korean ? '여자친구:'          : 'Girlfriend:';
+		allowVocalsCheckBox.label = korean ? '보컬 사용'      : 'Allow Vocals';
+		reloadAudioButton.label   = korean ? '오디오\n새로고침' : 'Reload Audio';
+	}
+
 	override function update(elapsed:Float)
 	{
 		if(!fileDialog.completed)
@@ -779,6 +967,11 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				{
 					var vis:Bool = !fullTipText.visible;
 					tipBg.visible = tipBg.active = fullTipText.visible = fullTipText.active = vis;
+				}
+				else if(FlxG.keys.justPressed.K)
+				{
+					tipTextKorean = !tipTextKorean;
+					_applyLang(tipTextKorean);
 				}
 
 				var goingBack:Bool = false;
@@ -2358,19 +2551,23 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		var objX = 10;
 		var objY = 10;
 
-		var txt = new FlxText(objX, objY, 280, "Any options here won't actually affect gameplay!");
+		var txt = _rT(new FlxText(objX, objY, 280, "Any options here won't actually affect gameplay!"),
+			"Any options here won't actually affect gameplay!", '이 설정들은 실제 플레이에 영향을 주지 않습니다!');
 		txt.alignment = CENTER;
 		tab_group.add(txt);
 
 		objY += 25;
 		playbackSlider = new PsychUISlider(50, objY, function(v:Float) setPitch(playbackRate = v), 1, 0.1, 5.0, 200);
+		_rT(playbackSlider.labelText, 'Playback Rate', '재생 속도');
 		playbackSlider.label = 'Playback Rate';
-		
+
 		objY += 60;
-		mouseSnapCheckBox = new PsychUICheckBox(objX, objY, 'Mouse Scroll Snap', 100, function() chartEditorSave.data.mouseScrollSnap = mouseSnapCheckBox.checked);
+		mouseSnapCheckBox = _rC(new PsychUICheckBox(objX, objY, 'Mouse Scroll Snap', 100, function() chartEditorSave.data.mouseScrollSnap = mouseSnapCheckBox.checked),
+			'Mouse Scroll Snap', '마우스 스크롤 스냅');
 		mouseSnapCheckBox.checked = chartEditorSave.data.mouseScrollSnap;
 
-		ignoreProgressCheckBox = new PsychUICheckBox(objX + 150, objY, 'Ignore Progress Warnings', 100, function() chartEditorSave.data.ignoreProgressWarns = ignoreProgressCheckBox.checked);
+		ignoreProgressCheckBox = _rC(new PsychUICheckBox(objX + 150, objY, 'Ignore Progress Warnings', 100, function() chartEditorSave.data.ignoreProgressWarns = ignoreProgressCheckBox.checked),
+			'Ignore Progress Warnings', '진행 경고 무시');
 		ignoreProgressCheckBox.checked = chartEditorSave.data.ignoreProgressWarns;
 
 		objY += 50;
@@ -2387,24 +2584,24 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		opponentVolumeStepper.onValueChange = updateAudioVolume;
 
 		objY += 25;
-		instMuteCheckBox = new PsychUICheckBox(objX, objY, 'Mute', 60, updateAudioVolume);
-		playerMuteCheckBox = new PsychUICheckBox(objX + 100, objY, 'Mute', 60, updateAudioVolume);
-		opponentMuteCheckBox = new PsychUICheckBox(objX + 200, objY, 'Mute', 60, updateAudioVolume);
+		instMuteCheckBox = _rC(new PsychUICheckBox(objX, objY, 'Mute', 60, updateAudioVolume), 'Mute', '음소거');
+		playerMuteCheckBox = _rC(new PsychUICheckBox(objX + 100, objY, 'Mute', 60, updateAudioVolume), 'Mute', '음소거');
+		opponentMuteCheckBox = _rC(new PsychUICheckBox(objX + 200, objY, 'Mute', 60, updateAudioVolume), 'Mute', '음소거');
 
 		tab_group.add(playbackSlider);
 		tab_group.add(mouseSnapCheckBox);
 		tab_group.add(ignoreProgressCheckBox);
 
-		tab_group.add(new FlxText(hitsoundPlayerStepper.x, hitsoundPlayerStepper.y - 15, 100, 'Hitsound (Player):'));
-		tab_group.add(new FlxText(hitsoundOpponentStepper.x, hitsoundOpponentStepper.y - 15, 100, 'Hitsound (Opp.):'));
-		tab_group.add(new FlxText(metronomeStepper.x, metronomeStepper.y - 15, 100, 'Metronome:'));
+		tab_group.add(_rT(new FlxText(hitsoundPlayerStepper.x, hitsoundPlayerStepper.y - 15, 100, 'Hitsound (Player):'), 'Hitsound (Player):', '히트음 (플레이어):'));
+		tab_group.add(_rT(new FlxText(hitsoundOpponentStepper.x, hitsoundOpponentStepper.y - 15, 100, 'Hitsound (Opp.):'), 'Hitsound (Opp.):', '히트음 (상대):'));
+		tab_group.add(_rT(new FlxText(metronomeStepper.x, metronomeStepper.y - 15, 100, 'Metronome:'), 'Metronome:', '메트로놈:'));
 		tab_group.add(hitsoundPlayerStepper);
 		tab_group.add(hitsoundOpponentStepper);
 		tab_group.add(metronomeStepper);
-		
-		tab_group.add(new FlxText(instVolumeStepper.x, instVolumeStepper.y - 15, 100, 'Inst. Volume:'));
-		tab_group.add(new FlxText(playerVolumeStepper.x, playerVolumeStepper.y - 15, 100, 'Main Vocals:'));
-		tab_group.add(new FlxText(opponentVolumeStepper.x, opponentVolumeStepper.y - 15, 100, 'Opp. Vocals:'));
+
+		tab_group.add(_rT(new FlxText(instVolumeStepper.x, instVolumeStepper.y - 15, 100, 'Inst. Volume:'), 'Inst. Volume:', '반주 볼륨:'));
+		tab_group.add(_rT(new FlxText(playerVolumeStepper.x, playerVolumeStepper.y - 15, 100, 'Main Vocals:'), 'Main Vocals:', '메인 보컬:'));
+		tab_group.add(_rT(new FlxText(opponentVolumeStepper.x, opponentVolumeStepper.y - 15, 100, 'Opp. Vocals:'), 'Opp. Vocals:', '상대 보컬:'));
 		tab_group.add(instVolumeStepper);
 		tab_group.add(instMuteCheckBox);
 		tab_group.add(playerVolumeStepper);
@@ -2434,21 +2631,21 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		});
 
 		objY += 40;
-		gameOverSndInputText = new PsychUIInputText(objX, objY, 120, '', 8);
+		gameOverSndInputText = new PsychUIInputText(objX, objY, 120, '', 10);
 		gameOverSndInputText.onChange = function(old:String, cur:String)
 		{
 			PlayState.SONG.gameOverSound = cur;
 			if(cur.trim().length < 1) Reflect.deleteField(PlayState.SONG, 'gameOverSound');
 		}
 		objY += 40;
-		gameOverLoopInputText = new PsychUIInputText(objX, objY, 120, '', 8);
+		gameOverLoopInputText = new PsychUIInputText(objX, objY, 120, '', 10);
 		gameOverLoopInputText.onChange = function(old:String, cur:String)
 		{
 			PlayState.SONG.gameOverLoop = cur;
 			if(cur.trim().length < 1) Reflect.deleteField(PlayState.SONG, 'gameOverLoop');
 		}
 		objY += 40;
-		gameOverRetryInputText = new PsychUIInputText(objX, objY, 120, '', 8);
+		gameOverRetryInputText = new PsychUIInputText(objX, objY, 120, '', 10);
 		gameOverRetryInputText.onChange = function(old:String, cur:String)
 		{
 			PlayState.SONG.gameOverEnd = cur;
@@ -2456,14 +2653,14 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		}
 
 		objY += 35;
-		noRGBCheckBox = new PsychUICheckBox(objX, objY, 'Disable Note RGB', 100, updateNotesRGB);
-		noSplashRGBCheckBox = new PsychUICheckBox(objX + 150, objY, 'Disable Splash RGB', 110, function()
+		noRGBCheckBox = _rC(new PsychUICheckBox(objX, objY, 'Disable Note RGB', 100, updateNotesRGB), 'Disable Note RGB', '노트 RGB 비활성화');
+		noSplashRGBCheckBox = _rC(new PsychUICheckBox(objX + 150, objY, 'Disable Splash RGB', 110, function()
 		{
 			PlayState.SONG.disableSplashRGB = noSplashRGBCheckBox.checked;
-		});
+		}), 'Disable Splash RGB', '스플래시 RGB 비활성화');
 
 		objY += 40;
-		noteTextureInputText = new PsychUIInputText(objX, objY, 120, '');
+		noteTextureInputText = new PsychUIInputText(objX, objY, 120, '', 10);
 		noteTextureInputText.unfocus = function()
 		{
 			var changed:Bool = false;
@@ -2503,18 +2700,18 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			if(cur.trim().length < 1) PlayState.SONG.splashSkin = null;
 		}
 	
-		tab_group.add(new FlxText(gameOverCharDropDown.x, gameOverCharDropDown.y - 15, 120, 'Game Over Character:'));
-		tab_group.add(new FlxText(gameOverSndInputText.x, gameOverSndInputText.y - 15, 180, 'Game Over Death Sound (sounds/):'));
-		tab_group.add(new FlxText(gameOverLoopInputText.x, gameOverLoopInputText.y - 15, 180, 'Game Over Loop Music (music/):'));
-		tab_group.add(new FlxText(gameOverRetryInputText.x, gameOverRetryInputText.y - 15, 180, 'Game Over Retry Music (music/):'));
+		tab_group.add(_rT(new FlxText(gameOverCharDropDown.x, gameOverCharDropDown.y - 15, 120, 'Game Over Character:'), 'Game Over Character:', '게임 오버 캐릭터:'));
+		tab_group.add(_rT(new FlxText(gameOverSndInputText.x, gameOverSndInputText.y - 15, 180, 'Game Over Death Sound (sounds/):'), 'Game Over Death Sound (sounds/):', '게임 오버 사망음 (sounds/):'));
+		tab_group.add(_rT(new FlxText(gameOverLoopInputText.x, gameOverLoopInputText.y - 15, 180, 'Game Over Loop Music (music/):'), 'Game Over Loop Music (music/):', '게임 오버 루프 음악 (music/):'));
+		tab_group.add(_rT(new FlxText(gameOverRetryInputText.x, gameOverRetryInputText.y - 15, 180, 'Game Over Retry Music (music/):'), 'Game Over Retry Music (music/):', '게임 오버 재시도 음악 (music/):'));
 		tab_group.add(gameOverSndInputText);
 		tab_group.add(gameOverLoopInputText);
 		tab_group.add(gameOverRetryInputText);
 		tab_group.add(noRGBCheckBox);
 		tab_group.add(noSplashRGBCheckBox);
 
-		tab_group.add(new FlxText(noteTextureInputText.x, noteTextureInputText.y - 15, 100, 'Note Texture:'));
-		tab_group.add(new FlxText(noteSplashesInputText.x, noteSplashesInputText.y - 15, 120, 'Note Splashes Texture:'));
+		tab_group.add(_rT(new FlxText(noteTextureInputText.x, noteTextureInputText.y - 15, 100, 'Note Texture:'), 'Note Texture:', '노트 텍스처:'));
+		tab_group.add(_rT(new FlxText(noteSplashesInputText.x, noteSplashesInputText.y - 15, 120, 'Note Splashes Texture:'), 'Note Splashes Texture:', '노트 스플래시 텍스처:'));
 		tab_group.add(noteTextureInputText);
 		tab_group.add(noteSplashesInputText);
 
@@ -2655,9 +2852,9 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		objY += 40;
 		eventDescriptionText = new FlxText(objX, objY, 280, defaultEvents[0][1]);
 
-		tab_group.add(new FlxText(eventDropDown.x, eventDropDown.y - 15, 80, 'Event:'));
-		tab_group.add(new FlxText(value1InputText.x, value1InputText.y - 15, 80, 'Value 1:'));
-		tab_group.add(new FlxText(value2InputText.x, value2InputText.y - 15, 80, 'Value 2:'));
+		tab_group.add(_rT(new FlxText(eventDropDown.x, eventDropDown.y - 15, 80, 'Event:'), 'Event:', '이벤트:'));
+		tab_group.add(_rT(new FlxText(value1InputText.x, value1InputText.y - 15, 80, 'Value 1:'), 'Value 1:', '값 1:'));
+		tab_group.add(_rT(new FlxText(value2InputText.x, value2InputText.y - 15, 80, 'Value 2:'), 'Value 2:', '값 2:'));
 
 		tab_group.add(removeButton);
 		tab_group.add(addButton);
@@ -2754,9 +2951,9 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			softReloadNotes();
 		}, 150);
 		
-		tab_group.add(new FlxText(susLengthStepper.x, susLengthStepper.y - 15, 80, 'Sustain length:'));
-		tab_group.add(new FlxText(strumTimeStepper.x, strumTimeStepper.y - 15, 100, 'Note Hit time (ms):'));
-		tab_group.add(new FlxText(noteTypeDropDown.x, noteTypeDropDown.y - 15, 80, 'Note Type:'));
+		tab_group.add(_rT(new FlxText(susLengthStepper.x, susLengthStepper.y - 15, 80, 'Sustain length:'), 'Sustain length:', '지속 시간:'));
+		tab_group.add(_rT(new FlxText(strumTimeStepper.x, strumTimeStepper.y - 15, 100, 'Note Hit time (ms):'), 'Note Hit time (ms):', '노트 히트 시간 (ms):'));
+		tab_group.add(_rT(new FlxText(noteTypeDropDown.x, noteTypeDropDown.y - 15, 80, 'Note Type:'), 'Note Type:', '노트 타입:'));
 		tab_group.add(susLengthStepper);
 		tab_group.add(strumTimeStepper);
 		tab_group.add(noteTypeDropDown);
@@ -2842,26 +3039,26 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			}
 		}
 
-		mustHitCheckBox = new PsychUICheckBox(objX, objY, 'Must Hit Sec.', 70, function()
+		mustHitCheckBox = _rC(new PsychUICheckBox(objX, objY, 'Must Hit Sec.', 70, function()
 		{
 			var sec = getCurChartSection();
 			if(sec != null) sec.mustHitSection = mustHitCheckBox.checked;
 			updateHeads(true);
-		});
-		gfSectionCheckBox = new PsychUICheckBox(objX + 100, objY, 'GF Section', 70, function()
+		}), 'Must Hit Sec.', '필수 히트 섹션');
+		gfSectionCheckBox = _rC(new PsychUICheckBox(objX + 100, objY, 'GF Section', 70, function()
 		{
 			var sec = getCurChartSection();
 			if(sec != null) sec.gfSection = gfSectionCheckBox.checked;
 			updateHeads(true);
-		});
-		altAnimSectionCheckBox = new PsychUICheckBox(objX + 200, objY, 'Alt Anim', 70, function()
+		}), 'GF Section', '여자친구 섹션');
+		altAnimSectionCheckBox = _rC(new PsychUICheckBox(objX + 200, objY, 'Alt Anim', 70, function()
 		{
 			var sec = getCurChartSection();
 			if(sec != null) sec.altAnim = altAnimSectionCheckBox.checked;
-		});
+		}), 'Alt Anim', '대체 애니메이션');
 
 		objY += 40;
-		changeBpmCheckBox = new PsychUICheckBox(objX, objY, 'Change BPM', 80, function()
+		changeBpmCheckBox = _rC(new PsychUICheckBox(objX, objY, 'Change BPM', 80, function()
 		{
 			var sec = getCurChartSection();
 			if(sec != null)
@@ -2871,7 +3068,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				if(!Reflect.hasField(sec, 'bpm')) sec.bpm = changeBpmStepper.value;
 				adaptNotesToNewTimes(oldTimes);
 			}
-		});
+		}), 'Change BPM', 'BPM 변경');
 
 		objY += 25;
 		changeBpmStepper = new PsychUINumericStepper(objX, objY, 1, 0, 1, 400, 3);
@@ -2902,12 +3099,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		};
 
 		objY += 40;
-		var copyButton:PsychUIButton = new PsychUIButton(objX, objY, 'Copy Section', copyNotesOnSection.bind());
-		var pasteButton:PsychUIButton = new PsychUIButton(objX + 100, objY, 'Paste Section', function()
+		var copyButton:PsychUIButton = _rB(new PsychUIButton(objX, objY, 'Copy Section', copyNotesOnSection.bind()), 'Copy Section', '섹션 복사');
+		var pasteButton:PsychUIButton = _rB(new PsychUIButton(objX + 100, objY, 'Paste Section', function()
 		{
 			pasteCopiedNotesToSection(affectNotes.checked, affectEvents.checked);
-		});
-		var clearButton:PsychUIButton = new PsychUIButton(objX + 200, objY, 'Clear', function()
+		}), 'Paste Section', '섹션 붙여넣기');
+		var clearButton:PsychUIButton = _rB(new PsychUIButton(objX + 200, objY, 'Clear', function()
 		{
 			for (note in curRenderedNotes)
 			{
@@ -2921,17 +3118,17 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				selectedNotes.remove(note);
 			}
 			softReloadNotes(true);
-		});
+		}), 'Clear', '지우기');
 		clearButton.normalStyle.bgColor = FlxColor.RED;
 		clearButton.normalStyle.textColor = FlxColor.WHITE;
 
 		objY += 25;
-		affectNotes = new PsychUICheckBox(objX, objY, 'Notes', 60);
+		affectNotes = _rC(new PsychUICheckBox(objX, objY, 'Notes', 60), 'Notes', '노트');
 		affectNotes.checked = true;
-		affectEvents = new PsychUICheckBox(objX + 100, objY, 'Events', 60);
+		affectEvents = _rC(new PsychUICheckBox(objX + 100, objY, 'Events', 60), 'Events', '이벤트');
 
 		objY += 32;
-		var copyLastSecButton:PsychUIButton = new PsychUIButton(objX, objY, 'Copy Last Section', function()
+		var copyLastSecButton:PsychUIButton = _rB(new PsychUIButton(objX, objY, 'Copy Last Section', function()
 		{
 			var lastCopiedNotes = copiedNotes;
 			var lastCopiedEvents = copiedEvents;
@@ -2939,12 +3136,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			pasteCopiedNotesToSection(affectNotes.checked, affectEvents.checked);
 			copiedNotes = lastCopiedNotes;
 			copiedEvents = lastCopiedEvents;
-		});
+		}), 'Copy Last Section', '이전 섹션 복사');
 		copyLastSecButton.resize(80, 26);
 		copyLastSecStepper = new PsychUINumericStepper(objX + 110, objY + 2, 1, 1, -999, 999, 0);
 		
 		objY += 40;
-		var swapSectionButton:PsychUIButton = new PsychUIButton(objX, objY, 'Swap Section', function()
+		var swapSectionButton:PsychUIButton = _rB(new PsychUIButton(objX, objY, 'Swap Section', function()
 		{
 			var maxData:Int = GRID_COLUMNS_PER_PLAYER * GRID_PLAYERS;
 			for (note in curRenderedNotes)
@@ -2958,8 +3155,8 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				}
 			}
 			softReloadNotes(true);
-		});
-		var duetSectionButton:PsychUIButton = new PsychUIButton(objX + 100, objY, 'Duet Section', function()
+		}), 'Swap Section', '섹션 스왑');
+		var duetSectionButton:PsychUIButton = _rB(new PsychUIButton(objX + 100, objY, 'Duet Section', function()
 		{
 			var side:Int = -1;
 			for (note in curRenderedNotes.members)
@@ -2998,8 +3195,8 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			softReloadNotes(true);
 			
 			addUndoAction(ADD_NOTE, {notes: pushedNotes});
-		});
-		var mirrorNotesButton:PsychUIButton = new PsychUIButton(objX + 200, objY, 'Mirror Notes', function()
+		}), 'Duet Section', '듀엣 섹션');
+		var mirrorNotesButton:PsychUIButton = _rB(new PsychUIButton(objX + 200, objY, 'Mirror Notes', function()
 		{
 			var maxData:Int = GRID_COLUMNS_PER_PLAYER * GRID_PLAYERS;
 			for (note in curRenderedNotes)
@@ -3011,13 +3208,13 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				positionNoteXByData(note);
 			}
 			softReloadNotes(true);
-		});
+		}), 'Mirror Notes', '노트 미러');
 
 		tab_group.add(mustHitCheckBox);
 		tab_group.add(gfSectionCheckBox);
 		tab_group.add(altAnimSectionCheckBox);
 
-		tab_group.add(new FlxText(beatsPerSecStepper.x, beatsPerSecStepper.y - 15, 100, 'Beats per Section:'));
+		tab_group.add(_rT(new FlxText(beatsPerSecStepper.x, beatsPerSecStepper.y - 15, 100, 'Beats per Section:'), 'Beats per Section:', '섹션당 비트:'));
 		tab_group.add(changeBpmCheckBox);
 		tab_group.add(changeBpmStepper);
 		tab_group.add(beatsPerSecStepper);
@@ -3185,6 +3382,17 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 	var playerDropDown:PsychUIDropDownMenu;
 	var opponentDropDown:PsychUIDropDownMenu;
 	var girlfriendDropDown:PsychUIDropDownMenu;
+
+	var songTabLabels:Array<{text:FlxText, en:String, ko:String}> = [];
+	var reloadAudioButton:PsychUIButton;
+	var songNameLabel:FlxText;
+	var bpmLabel:FlxText;
+	var scrollSpeedLabel:FlxText;
+	var audioOffsetLabel:FlxText;
+	var stageLabel:FlxText;
+	var playerLabel:FlxText;
+	var opponentLabel:FlxText;
+	var girlfriendLabel:FlxText;
 	
 	function addSongTab()
 	{
@@ -3195,12 +3403,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		songNameInputText = new PsychUIInputText(objX, objY, 100, 'None', 8);
 		songNameInputText.onChange = function(old:String, cur:String) PlayState.SONG.song = cur;
 
-		allowVocalsCheckBox = new PsychUICheckBox(objX, objY + 20, 'Allow Vocals', 80, function()
+		allowVocalsCheckBox = _rC(new PsychUICheckBox(objX, objY + 20, 'Allow Vocals', 80, function()
 		{
 			PlayState.SONG.needsVoices = allowVocalsCheckBox.checked;
 			loadMusic();
-		});
-		var reloadAudioButton:PsychUIButton = new PsychUIButton(objX + 120, objY, 'Reload Audio', function() loadMusic(true), 80);
+		}), 'Allow Vocals', '보컬 허용');
+		reloadAudioButton = _rB(new PsychUIButton(objX + 120, objY, 'Reload Audio', function() loadMusic(true), 80), 'Reload Audio', '오디오\n새로고침');
 
 		#if mac
 		var reloadJsonButton:PsychUIButton = new PsychUIButton(objX + 205, objY, 'Reload JSON', function()
@@ -3256,8 +3464,11 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			updateWaveform();
 		};
 
-		tab_group.add(new FlxText(songNameInputText.x, songNameInputText.y - 15, 80, 'Song Name:'));
+		songNameLabel = _rT(new FlxText(songNameInputText.x, songNameInputText.y - 15, 80, 'Song Name:'), 'Song Name:', '곡 이름:');
+		tab_group.add(songNameLabel);
 		tab_group.add(songNameInputText);
+		tab_group.add(allowVocalsCheckBox);
+		tab_group.add(reloadAudioButton);
 		tab_group.add(allowVocalsCheckBox);
 		tab_group.add(reloadAudioButton);
 		#if mac
@@ -3299,18 +3510,25 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			trace('selected $character');
 		});
 		
-		tab_group.add(new FlxText(bpmStepper.x, bpmStepper.y - 15, 50, 'BPM:'));
-		tab_group.add(new FlxText(scrollSpeedStepper.x, scrollSpeedStepper.y - 15, 80, 'Scroll Speed:'));
-		tab_group.add(new FlxText(audioOffsetStepper.x, audioOffsetStepper.y - 15, 100, 'Audio Offset (ms):'));
+		bpmLabel = _rT(new FlxText(bpmStepper.x, bpmStepper.y - 15, 50, 'BPM:'), 'BPM:', 'BPM:');
+		scrollSpeedLabel = _rT(new FlxText(scrollSpeedStepper.x, scrollSpeedStepper.y - 15, 80, 'Scroll Speed:'), 'Scroll Speed:', '스크롤 속도:');
+		audioOffsetLabel = _rT(new FlxText(audioOffsetStepper.x, audioOffsetStepper.y - 15, 100, 'Audio Offset (ms):'), 'Audio Offset (ms):', '오디오 오프셋 (ms):');
+		tab_group.add(bpmLabel);
+		tab_group.add(scrollSpeedLabel);
+		tab_group.add(audioOffsetLabel);
 		tab_group.add(bpmStepper);
 		tab_group.add(scrollSpeedStepper);
 		tab_group.add(audioOffsetStepper);
 
 		//dropdowns
-		tab_group.add(new FlxText(stageDropDown.x, stageDropDown.y - 15, 80, 'Stage:'));
-		tab_group.add(new FlxText(playerDropDown.x, playerDropDown.y - 15, 80, 'Player:'));
-		tab_group.add(new FlxText(opponentDropDown.x, opponentDropDown.y - 15, 80, 'Opponent:'));
-		tab_group.add(new FlxText(girlfriendDropDown.x, girlfriendDropDown.y - 15, 80, 'Girlfriend:'));
+		stageLabel = _rT(new FlxText(stageDropDown.x, stageDropDown.y - 15, 80, 'Stage:'), 'Stage:', '스테이지:');
+		playerLabel = _rT(new FlxText(playerDropDown.x, playerDropDown.y - 15, 80, 'Player:'), 'Player:', '플레이어:');
+		opponentLabel = _rT(new FlxText(opponentDropDown.x, opponentDropDown.y - 15, 80, 'Opponent:'), 'Opponent:', '상대:');
+		girlfriendLabel = _rT(new FlxText(girlfriendDropDown.x, girlfriendDropDown.y - 15, 80, 'Girlfriend:'), 'Girlfriend:', '여자친구:');
+		tab_group.add(stageLabel);
+		tab_group.add(playerLabel);
+		tab_group.add(opponentLabel);
+		tab_group.add(girlfriendLabel);
 		tab_group.add(stageDropDown);
 		tab_group.add(girlfriendDropDown);
 		tab_group.add(opponentDropDown);
@@ -3325,7 +3543,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		var btnY = 1;
 		var btnWid = Std.int(tab.width);
 
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  New', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  New', function()
 		{
 			var func:Void->Void = function()
 			{
@@ -3336,13 +3554,13 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 			if(!ignoreProgressCheckBox.checked) openSubState(new Prompt('Are you sure you want to start over?', func));
 			else func();
-		}, btnWid);
+		}, btnWid), '  New', '  새로 만들기');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Open Chart...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Open Chart...', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
@@ -3378,12 +3596,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					trace(e.stack);
 				}
 			});
-		}, btnWid);
+		}, btnWid), '  Open Chart...', '  채보 열기...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Open Autosave...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Open Autosave...', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
@@ -3408,7 +3626,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			radioGrp.checked = 0;
 
 			var hei:Float = radioGrp.height + 160;
-			openSubState(new BasePrompt(420, hei, 'Choose an Autosave',
+			openSubState(new BasePrompt(420, hei, tipTextKorean ? '자동저장 선택' : 'Choose an Autosave',
 				function(state:BasePrompt) {
 					upperBox.isMinimized = true;
 					upperBox.bg.visible = false;
@@ -3422,7 +3640,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					radioGrp.cameras = state.cameras;
 					state.add(radioGrp);
 
-					var btn:PsychUIButton = new PsychUIButton(0, radioGrp.y + radioGrp.height + 20, 'Load', function()
+					var btn:PsychUIButton = new PsychUIButton(0, radioGrp.y + radioGrp.height + 20, tipTextKorean ? '불러오기' : 'Load', function()
 					{
 						var autosaveName:String = fileList[radioGrp.checked];
 						var path:String = 'backups/$autosaveName';
@@ -3465,17 +3683,18 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					});
 					btn.cameras = state.cameras;
 					btn.screenCenter(X);
+					_applyButtonStyle(btn, tipTextKorean);
 					state.add(btn);
 				}
 			));
-		}, btnWid);
+		}, btnWid), '  Open Autosave...', '  자동저장 열기...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		if(SHOW_EVENT_COLUMN)
 		{
 			btnY += 20;
-			var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Open Events...', function()
+			var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Open Events...', function()
 			{
 				if(!fileDialog.completed) return;
 				upperBox.isMinimized = true;
@@ -3500,11 +3719,11 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 							return;
 						}
 	
-						openSubState(new BasePrompt('Events Found! Choose an action.',
+						openSubState(new BasePrompt(tipTextKorean ? '이벤트를 찾았습니다! 작업을 선택하세요.' : 'Events Found! Choose an action.',
 							function(state:BasePrompt)
 							{
 								var btnY = 390;
-								var btn:PsychUIButton = new PsychUIButton(0, btnY, 'Replace All', function()
+								var btn:PsychUIButton = new PsychUIButton(0, btnY, tipTextKorean ? '전체 교체' : 'Replace All', function()
 								{
 									for (event in events)
 									{
@@ -3529,9 +3748,10 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 								btn.screenCenter(X);
 								btn.x -= 125;
 								btn.cameras = state.cameras;
+								_applyButtonStyle(btn, tipTextKorean);
 								state.add(btn);
 								
-								var btn:PsychUIButton = new PsychUIButton(0, btnY, 'Add', function()
+								var btn:PsychUIButton = new PsychUIButton(0, btnY, tipTextKorean ? '추가' : 'Add', function()
 								{
 									for (event in loadedEvents)
 										events.push(createEvent(event));
@@ -3542,12 +3762,14 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 								});
 								btn.screenCenter(X);
 								btn.cameras = state.cameras;
+								_applyButtonStyle(btn, tipTextKorean);
 								state.add(btn);
 						
-								var btn:PsychUIButton = new PsychUIButton(0, btnY, 'Cancel', state.close);
+								var btn:PsychUIButton = new PsychUIButton(0, btnY, tipTextKorean ? '취소' : 'Cancel', state.close);
 								btn.screenCenter(X);
 								btn.x += 125;
 								btn.cameras = state.cameras;
+								_applyButtonStyle(btn, tipTextKorean);
 								state.add(btn);
 							}
 						));
@@ -3558,40 +3780,40 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 						trace(e.stack);
 					}
 				});
-			}, btnWid);
+			}, btnWid), '  Open Events...', '  이벤트 열기...');
 			btn.text.alignment = LEFT;
 			tab_group.add(btn);
 		}
 
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Save', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Save', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
 			upperBox.bg.visible = false;
 
 			saveChart();
-		}, btnWid);
+		}, btnWid), '  Save', '  저장');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Save as...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Save as...', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
 			upperBox.bg.visible = false;
 
 			saveChart(false);
-		},btnWid);
+		},btnWid), '  Save as...', '  다른 이름으로 저장...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		if(SHOW_EVENT_COLUMN)
 		{
 			btnY += 20;
-			var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Save Events...', function()
+			var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Save Events...', function()
 			{
 				if(!fileDialog.completed) return;
 				upperBox.isMinimized = true;
@@ -3600,14 +3822,14 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				fileDialog.save('events.json', PsychJsonPrinter.print({events: PlayState.SONG.events, format: 'psych_v1'}, ['events']),
 					function() showOutput('Events saved successfully to: ${fileDialog.path}'), null,
 					function() showOutput('Error on saving events!', true));
-			}, btnWid);
+			}, btnWid), '  Save Events...', '  이벤트 저장...');
 			btn.text.alignment = LEFT;
 			tab_group.add(btn);
 		}
 
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Reload Chart', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Reload Chart', function()
 		{
 			var func:Void->Void = function()
 			{
@@ -3638,13 +3860,13 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 			if(!ignoreProgressCheckBox.checked) openSubState(new Prompt('Warning: Any unsaved progress will be lost', func));
 			else func();
-		}, btnWid);
+		}, btnWid), '  Reload Chart', '  채보 다시 불러오기');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 		
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Save (V-Slice)...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Save (V-Slice)...', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
@@ -3666,12 +3888,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					var pack:VSlicePackage = VSlice.export(PlayState.SONG);
 
 					ClientPrefs.toggleVolumeKeys(false);
-					openSubState(new BasePrompt('Metadata',
+					openSubState(new BasePrompt(tipTextKorean ? '메타데이터' : 'Metadata',
 						function(state:BasePrompt)
 						{
 							var btnX = 640;
 							var btnY = 400;
-							var btn:PsychUIButton = new PsychUIButton(btnX, btnY, 'Save', function()
+							var btn:PsychUIButton = new PsychUIButton(btnX, btnY, tipTextKorean ? '저장' : 'Save', function()
 							{
 								overwriteSavedSomething = false;
 								overwriteCheck(chartFile, '$chartName-chart.json', PsychJsonPrinter.print(pack.chart, ['events', 'notes', 'scrollSpeed']), function()
@@ -3687,10 +3909,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 							btn.normalStyle.bgColor = FlxColor.GREEN;
 							btn.normalStyle.textColor = FlxColor.WHITE;
 							btn.cameras = state.cameras;
+							_applyButtonStyle(btn, tipTextKorean);
 							state.add(btn);
 							
-							var btn:PsychUIButton = new PsychUIButton(btnX + 100, btnY, 'Cancel', state.close);
+							var btn:PsychUIButton = new PsychUIButton(btnX + 100, btnY, tipTextKorean ? '취소' : 'Cancel', state.close);
 							btn.cameras = state.cameras;
+							_applyButtonStyle(btn, tipTextKorean);
 							state.add(btn);
 							
 							var textX = FlxG.width/2 - 155;
@@ -3703,10 +3927,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 							charterInput.cameras = state.cameras;
 							charterInput.onChange = function(old:String, cur:String) pack.metadata.charter = cur;
 							
-							var artistTxt:FlxText = new FlxText(artistInput.x, artistInput.y - 15, 100, 'Artist/Composer:');
+							var artistTxt:FlxText = new FlxText(artistInput.x, artistInput.y - 15, 100, tipTextKorean ? '아티스트/작곡가:' : 'Artist/Composer:');
 							artistTxt.cameras = state.cameras;
-							var charterTxt:FlxText = new FlxText(charterInput.x, charterInput.y - 15, 100, 'Charter:');
+							_applyTextStyle(artistTxt, tipTextKorean);
+							var charterTxt:FlxText = new FlxText(charterInput.x, charterInput.y - 15, 100, tipTextKorean ? '차터:' : 'Charter:');
 							charterTxt.cameras = state.cameras;
+							_applyTextStyle(charterTxt, tipTextKorean);
 							state.add(artistTxt);
 							state.add(charterTxt);
 							state.add(artistInput);
@@ -3724,12 +3950,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					trace(e.stack);
 				}
 			});
-		},btnWid);
+		},btnWid), '  Save (V-Slice)...', '  V-Slice용 저장 (차트/메타데이터)...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Psych to V-Slice...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Psych to V-Slice...', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
@@ -3753,7 +3979,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				}
 
 				ClientPrefs.toggleVolumeKeys(false);
-				openSubState(new BasePrompt('Metadata',
+				openSubState(new BasePrompt(tipTextKorean ? '메타데이터' : 'Metadata',
 					function(state:BasePrompt)
 					{
 						var songName:String = Paths.formatToSongPath(pack.metadata.songName);
@@ -3762,7 +3988,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 						var btnX = 640;
 						var btnY = 400;
-						var btn:PsychUIButton = new PsychUIButton(btnX, btnY, 'Save', function()
+						var btn:PsychUIButton = new PsychUIButton(btnX, btnY, tipTextKorean ? '저장' : 'Save', function()
 						{
 							try
 							{
@@ -3793,107 +4019,72 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 										}
 										else trace('File not found: $chartToFind');
 									}
-									
-									var chartToFind:String = parentFolder + 'events.json';
-									if(FileSystem.exists(chartToFind))
-									{
-										var eventsChart:SwagSong = Song.parseJSON(File.getContent(chartToFind), 'events');
-										if(eventsChart != null)
-										{
-											var subpack:VSlicePackage = VSlice.export(eventsChart);
-											if(subpack.chart.events != null && subpack.chart.events.length > 0)
-											{
-												for (event in subpack.chart.events)
-												{
-													if(event == null) continue;
-													pack.chart.events.push(event);
-												}
-											}
-											@:privateAccess pack.chart.events.sort(VSlice.sortByTime);
-										}
-									}
+								}
+								
+								fileDialog.openDirectory('Save V-Slice Conversion/Metadata JSONs', function()
+								{
+									var path:String = fileDialog.path.replace('\\', '/');
 
-									fileDialog.openDirectory('Save V-Slice Chart/Metadata JSONs', function()
+									var chartFile:String = '$path/$songName-chart.json';
+									var metadataFile:String = '$path/$songName-metadata.json';
+
+									overwriteSavedSomething = false;
+									overwriteCheck(chartFile, '$songName-chart.json', PsychJsonPrinter.print(pack.chart, ['events', 'notes', 'scrollSpeed']), function()
 									{
-										overwriteSavedSomething = false;
-										var path:String = fileDialog.path.replace('\\', '/');
-										if(path.endsWith('/')) path = path.substr(0, path.length-1);
-										overwriteCheck('$path/$songName-chart.json', '$songName-chart.json', PsychJsonPrinter.print(pack.chart, ['events', 'notes', 'scrollSpeed']), function()
+										overwriteCheck(metadataFile, '$songName-metadata.json', PsychJsonPrinter.print(pack.metadata, ['characters', 'difficulties', 'timeChanges']), function()
 										{
-											overwriteCheck('$path/$songName-metadata.json', '$songName-metadata.json', PsychJsonPrinter.print(pack.metadata, ['characters', 'difficulties', 'timeChanges']), function()
-											{
-												if(overwriteSavedSomething)
-													showOutput('Files saved successfully to: $path!');
-											});
+											if(overwriteSavedSomething)
+												showOutput('Files saved successfully to: $path!');
 										});
 									});
-								}
-								else showOutput('Error: You need atleast one difficulty to export.', true);
+								});
+								state.close();
 							}
 							catch(e:Exception)
 							{
-								showOutput('Error: ${e.message}', true);
-								trace(e.stack);
+								showOutput('Error on saving conversion: ${e.message}', true);
 							}
-							state.close();
 						});
 						btn.normalStyle.bgColor = FlxColor.GREEN;
 						btn.normalStyle.textColor = FlxColor.WHITE;
 						btn.cameras = state.cameras;
+						_applyButtonStyle(btn, tipTextKorean);
 						state.add(btn);
 						
-						var btn:PsychUIButton = new PsychUIButton(btnX + 100, btnY, 'Cancel', state.close);
+						var btn:PsychUIButton = new PsychUIButton(btnX + 100, btnY, tipTextKorean ? '취소' : 'Cancel', state.close);
 						btn.cameras = state.cameras;
+						_applyButtonStyle(btn, tipTextKorean);
 						state.add(btn);
 						
-						var textX = FlxG.width/2 - 180;
+						var textX = FlxG.width/2 - 155;
 						var textY = 360;
-						artistInput = new PsychUIInputText(textX, textY, 120, pack.metadata.artist, 8);
+						var artistInput:PsychUIInputText = new PsychUIInputText(textX, textY, 120, pack.metadata.artist, 8);
 						artistInput.cameras = state.cameras;
 						artistInput.onChange = function(old:String, cur:String) pack.metadata.artist = cur;
-	
-						charterInput = new PsychUIInputText(textX + 150, textY, 120, pack.metadata.charter, 8);
+
+						var charterInput:PsychUIInputText = new PsychUIInputText(textX + 190, textY, 120, pack.metadata.charter, 8);
 						charterInput.cameras = state.cameras;
 						charterInput.onChange = function(old:String, cur:String) pack.metadata.charter = cur;
-
-						var diffs:Array<String> = pack.metadata.playData.difficulties;
-						if(diffs == null || diffs.length < 0) pack.metadata.playData.difficulties = diffs = ['easy', 'normal', 'hard'];
-						difficultiesInput = new PsychUIInputText(textX, textY + 42, 160, diffs.join(', '), 8);
-						difficultiesInput.cameras = state.cameras;
-						difficultiesInput.forceCase = LOWER_CASE;
-						difficultiesInput.onChange = function(old:String, cur:String)
-						{
-							pack.metadata.playData.difficulties = cur.split(',');
-
-							var diffs:Array<String> = pack.metadata.playData.difficulties;
-							for (num => diff in diffs)
-								diffs[num] = Paths.formatToSongPath(diff);
-
-							while(diffs.contains('')) //Clear invalids cuz people might be stupid
-								diffs.remove('');
-						}
 						
-						var artistTxt:FlxText = new FlxText(artistInput.x, artistInput.y - 15, 100, 'Artist/Composer:');
+						var artistTxt:FlxText = new FlxText(artistInput.x, artistInput.y - 15, 100, tipTextKorean ? '아티스트/작곡가:' : 'Artist/Composer:');
 						artistTxt.cameras = state.cameras;
-						var charterTxt:FlxText = new FlxText(charterInput.x, charterInput.y - 15, 100, 'Charter:');
+						_applyTextStyle(artistTxt, tipTextKorean);
+						var charterTxt:FlxText = new FlxText(charterInput.x, charterInput.y - 15, 100, tipTextKorean ? '차터:' : 'Charter:');
 						charterTxt.cameras = state.cameras;
-						var difficultiesTxt:FlxText = new FlxText(difficultiesInput.x, difficultiesInput.y - 15, 100, 'Difficulties:');
-						difficultiesTxt.cameras = state.cameras;
+						_applyTextStyle(charterTxt, tipTextKorean);
 						state.add(artistTxt);
 						state.add(charterTxt);
-						state.add(difficultiesTxt);
 						state.add(artistInput);
 						state.add(charterInput);
-						state.add(difficultiesInput);
 					}
 				));
 			});
-		},btnWid);
+		},btnWid), '  Psych to V-Slice...', '  Psych를 V-Slice로 변환...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  V-Slice to Psych...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  V-Slice to Psych...', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
@@ -3901,8 +4092,10 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 			fileDialog.open('chart.json', 'Open a V-Slice Chart file', function()
 			{
-				var chart:VSliceChart = cast Json.parse(fileDialog.data);
-				if(chart == null || chart.version == null || chart.notes == null || chart.scrollSpeed == null)
+				var chartData:String = fileDialog.data;
+				var chartPath:String = fileDialog.path.replace('\\', '/');
+
+				if(!chartData.contains('"notes"') || !chartData.contains('"scrollSpeed"'))
 				{
 					showOutput('Error: File loaded is not a valid FNF V-Slice chart.', true);
 					return;
@@ -3910,9 +4103,8 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 				fileDialog.open('metadata.json', 'Open a V-Slice Metadata file', function()
 				{
-					var metadata:VSliceMetadata = cast Json.parse(fileDialog.data);
-					if(metadata == null || metadata.version == null || metadata.playData == null || metadata.songName == null ||
-						metadata.playData.difficulties == null || metadata.timeChanges == null || metadata.timeChanges.length < 1)
+					var metadataData:String = fileDialog.data;
+					if(!metadataData.contains('"characters"') || !metadataData.contains('"difficulties"'))
 					{
 						showOutput('Error: File loaded is not a valid FNF V-Slice metadata.', true);
 						return;
@@ -3920,62 +4112,70 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 					try
 					{
-						var pack:PsychPackage = VSlice.convertToPsych(chart, metadata);
-						if(pack.difficulties != null)
+						var chartJSON:VSliceChart = Json.parse(chartData);
+						var metadataJSON:VSliceMetadata = Json.parse(metadataData);
+						var pack:PsychPackage = VSlice.convertToPsych(chartJSON, metadataJSON);
+						var diffNames:Array<String> = [];
+						var psychCharts:Array<SwagSong> = [];
+						for (key => chart in pack.difficulties)
 						{
-							fileDialog.openDirectory('Save Converted Psych JSONs', function()
-							{
-								var path:String = fileDialog.path.replace('\\', '/');
-								if(!path.endsWith('/')) path += '/';
-
-								var diffs:Array<String> = metadata.playData.difficulties.copy();
-								var defaultDiff:String = Paths.formatToSongPath(Difficulty.getDefault());
-								function nextChart()
-								{
-									while(diffs.length > 0)
-									{
-										var diffName:String = diffs[0];
-										diffs.remove(diffName);
-										if(!pack.difficulties.exists(diffName)) continue;
-		
-										var diffPostfix:String = (diffName != defaultDiff) ? '-$diffName' : '';
-										var chartData:SwagSong = pack.difficulties.get(diffName);
-										var chartName:String = Paths.formatToSongPath(chartData.song) + diffPostfix + '.json';
-										overwriteCheck(path + chartName, chartName, PsychJsonPrinter.print(chartData, ['sectionNotes', 'events']), nextChart, true);
-										return;
-									}
-	
-									if(pack.events != null)
-									{
-										overwriteCheck(path + 'events.json', 'events.json', PsychJsonPrinter.print(pack.events, ['events']), function()
-										{
-											if(overwriteSavedSomething)
-												showOutput('Files saved successfully to: ${fileDialog.path}!');
-										}, true);
-									}
-									else if(overwriteSavedSomething)
-										showOutput('Files saved successfully to: ${fileDialog.path}!');
-								}
-								
-								overwriteSavedSomething = false;
-								nextChart();
-							});
+							diffNames.push(key);
+							psychCharts.push(chart);
 						}
-						else showOutput('Error: No difficulties found.');
+
+						if(psychCharts.length < 1)
+						{
+							showOutput('Error: No charts found in the V-Slice pack.', true);
+							return;
+						}
+
+						openSubState(new BasePrompt(tipTextKorean ? 'Psych 채보 불러오기' : 'Load Psych Charts',
+							function(state:BasePrompt)
+							{
+								var radioGrp:PsychUIRadioGroup = new PsychUIRadioGroup(0, 0, diffNames, 25, 5, false, 240);
+								radioGrp.checked = 0;
+								radioGrp.screenCenter(X);
+								radioGrp.y = state.bg.y + 80;
+								radioGrp.cameras = state.cameras;
+								state.add(radioGrp);
+
+								var btnX = 640;
+								var btnY = 400;
+								var btn:PsychUIButton = new PsychUIButton(btnX, btnY, tipTextKorean ? '불러오기' : 'Load', function()
+								{
+									var loadedChart:SwagSong = psychCharts[radioGrp.checked];
+									loadChart(loadedChart);
+									Song.chartPath = null;
+									reloadNotesDropdowns();
+									prepareReload();
+									state.close();
+									showOutput('V-Slice Chart imported successfully!');
+								});
+								btn.normalStyle.bgColor = FlxColor.GREEN;
+								btn.normalStyle.textColor = FlxColor.WHITE;
+								btn.cameras = state.cameras;
+								_applyButtonStyle(btn, tipTextKorean);
+								state.add(btn);
+								
+								var btn:PsychUIButton = new PsychUIButton(btnX + 100, btnY, tipTextKorean ? '취소' : 'Cancel', state.close);
+								btn.cameras = state.cameras;
+								_applyButtonStyle(btn, tipTextKorean);
+								state.add(btn);
+							}
+						));
 					}
 					catch(e:Exception)
 					{
-						showOutput('Error: ${e.message}', true);
-						trace(e.stack);
+						showOutput('Error on importing conversion: ${e.message}', true);
 					}
 				});
 			});
-		},btnWid);
+		},btnWid), '  V-Slice to Psych...', '  V-Slice를 Psych로 변환...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 		
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Update (Legacy)...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Update (Legacy)...', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
@@ -4015,30 +4215,30 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					trace(e.stack);
 				}
 			});
-		}, btnWid);
+		}, btnWid), '  Update (Legacy)...', '  업데이트 (레거시)...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Preview (F12)', openEditorPlayState, btnWid);
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Preview (F12)', openEditorPlayState, btnWid), '  Preview (F12)', '  미리보기 (F12)');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 		
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Playtest (Enter)', goToPlayState, btnWid);
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Playtest (Enter)', goToPlayState, btnWid), '  Playtest (Enter)', '  플레이테스트 (Enter)');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Exit', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Exit', function()
 		{
 			PlayState.chartingMode = false;
 			MusicBeatState.switchState(new states.editors.MasterEditorMenu());
 			FlxG.sound.playMusic(Paths.music('freakyMenu'));
 			FlxG.mouse.visible = false;
-		}, btnWid);
+		}, btnWid), '  Exit', '  나가기');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 	}
@@ -4052,25 +4252,25 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		var btnY = 1;
 		var btnWid = Std.int(tab.width);
 
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Undo', undo, btnWid);
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Undo', undo, btnWid), '  Undo', '  실행 취소');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Redo', redo, btnWid);
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Redo', redo, btnWid), '  Redo', '  다시 실행');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Select All', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Select All', function()
 		{
 			var sel = selectedNotes;
 			selectedNotes = curRenderedNotes.members.copy();
 			addUndoAction(SELECT_NOTE, {old: sel, current: selectedNotes.copy()});
 			onSelectNote();
 			trace('Notes selected: ' + selectedNotes.length);
-		}, btnWid);
+		}, btnWid), '  Select All', '  모두 선택');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
@@ -4078,12 +4278,11 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		{
 			btnY++;
 			btnY += 20;
-			var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Lock Events', btnWid);
-			btn.onClick = function()
+			editLockEventsBtn = new PsychUIButton(btnX, btnY, '  Lock Events', btnWid);
+			_rB(editLockEventsBtn, '  Lock Events', '  이벤트 잠금');
+			editLockEventsBtn.onClick = function()
 			{
 				lockedEvents = !lockedEvents;
-				if(lockedEvents) btn.text.text = '  Unlock Events';
-				else btn.text.text = '  Lock Events';
 				eventLockOverlay.visible = lockedEvents;
 	
 				if(selectedNotes.length >= 1)
@@ -4096,19 +4295,20 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					if(selectedNotes.length == 1) onSelectNote();
 				}
 				softReloadNotes();
+				_applyLang(tipTextKorean);
 			};
-			btn.text.alignment = LEFT;
-			tab_group.add(btn);
+			editLockEventsBtn.text.alignment = LEFT;
+			tab_group.add(editLockEventsBtn);
 		}
 		
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Autosave Settings...', btnWid);
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Autosave Settings...', btnWid), '  Autosave Settings...', '  자동저장 설정...');
 		btn.onClick = function()
 		{
 			upperBox.isMinimized = true;
 			upperBox.bg.visible = false;
-			openSubState(new BasePrompt(400, 160, 'Autosave Settings',
+			openSubState(new BasePrompt(400, 160, tipTextKorean ? '자동저장 설정' : 'Autosave Settings',
 				function(state:BasePrompt)
 				{
 					var btn:PsychUIButton = new PsychUIButton(state.bg.x + state.bg.width - 40, state.bg.y, 'X', state.close, 40);
@@ -4126,12 +4326,13 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					};
 					timeStepper.cameras = state.cameras;
 
-					checkbox = new PsychUICheckBox(timeStepper.x + 80, timeStepper.y, 'Enabled', 60, function() {
+					checkbox = new PsychUICheckBox(timeStepper.x + 80, timeStepper.y, tipTextKorean ? '사용' : 'Enabled', 60, function() {
 						autoSaveTime = 0;
 						autoSaveCap = chartEditorSave.data.autoSave = checkbox.checked ? Std.int(timeStepper.value) : 0;
 					});
 					checkbox.checked = (autoSaveCap > 0);
 					checkbox.cameras = state.cameras;
+					_applyCheckBoxStyle(checkbox, tipTextKorean);
 					
 					var maxFileStepper:PsychUINumericStepper = new PsychUINumericStepper(checkbox.x + 140, checkbox.y, 1, backupLimit, 0, 50, 0);
 					maxFileStepper.onValueChange = function() {
@@ -4141,10 +4342,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					};
 					maxFileStepper.cameras = state.cameras;
 
-					var txt1:FlxText = new FlxText(timeStepper.x, timeStepper.y - 15, 100, 'Time (in minutes):');
+					var txt1:FlxText = new FlxText(timeStepper.x, timeStepper.y - 15, 100, tipTextKorean ? '시간 (분):' : 'Time (in minutes):');
 					txt1.cameras = state.cameras;
-					var txt2:FlxText = new FlxText(maxFileStepper.x, maxFileStepper.y - 15, 100, 'File Limit:');
+					_applyTextStyle(txt1, tipTextKorean);
+					var txt2:FlxText = new FlxText(maxFileStepper.x, maxFileStepper.y - 15, 100, tipTextKorean ? '파일 제한:' : 'File Limit:');
 					txt2.cameras = state.cameras;
+					_applyTextStyle(txt2, tipTextKorean);
 
 					state.add(txt1);
 					state.add(txt2);
@@ -4160,7 +4363,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Clear All Notes', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Clear All Notes', function()
 		{
 			var func:Void->Void = function()
 			{
@@ -4172,7 +4375,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 			if(!ignoreProgressCheckBox.checked) openSubState(new Prompt('Delete all Notes in the song?', func));
 			else func();
-		}, btnWid);
+		}, btnWid), '  Clear All Notes', '  모든 노트 삭제');
 		btn.normalStyle.bgColor = FlxColor.RED;
 		btn.normalStyle.textColor = FlxColor.WHITE;
 		btn.text.alignment = LEFT;
@@ -4181,7 +4384,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		if(SHOW_EVENT_COLUMN)
 		{
 			btnY += 20;
-			var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Clear All Events', function()
+			var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Clear All Events', function()
 			{
 				var func:Void->Void = function()
 				{
@@ -4193,7 +4396,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 	
 				if(!ignoreProgressCheckBox.checked) openSubState(new Prompt('Delete all Events in the song?', func));
 				else func();
-			}, btnWid);
+			}, btnWid), '  Clear All Events', '  모든 이벤트 삭제');
 			btn.normalStyle.bgColor = FlxColor.RED;
 			btn.normalStyle.textColor = FlxColor.WHITE;
 			btn.text.alignment = LEFT;
@@ -4254,7 +4457,8 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			vortexEnabled = !vortexEnabled;
 			chartEditorSave.data.vortex = vortexEnabled;
 			vortexIndicator.visible = strumLineNotes.visible = strumLineNotes.active = vortexEnabled;
-			vortexEditorButton.text.text = vortexEnabled ? '  Vortex Editor ON' : '  Vortex Editor OFF';
+			
+			_applyLang(tipTextKorean);
 
 			for (note in strumLineNotes)
 			{
@@ -4268,10 +4472,10 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Waveform...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Waveform...', function()
 		{
 			ClientPrefs.toggleVolumeKeys(false);
-			openSubState(new BasePrompt(320, 200, 'Waveform Settings',
+			openSubState(new BasePrompt(320, 200, tipTextKorean ? '파형 설정' : 'Waveform Settings',
 				function(state:BasePrompt) {
 					upperBox.isMinimized = true;
 					upperBox.bg.visible = false;
@@ -4280,7 +4484,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					btn.cameras = state.cameras;
 					state.add(btn);
 
-					var check:PsychUICheckBox = new PsychUICheckBox(state.bg.x + 40, state.bg.y + 80, 'Enabled', 60);
+					var check:PsychUICheckBox = new PsychUICheckBox(state.bg.x + 40, state.bg.y + 80, tipTextKorean ? '사용' : 'Enabled', 60);
 					check.onClick = function()
 					{
 						chartEditorSave.data.waveformEnabled = waveformEnabled = check.checked;
@@ -4318,20 +4522,21 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 					var txt1:FlxText = new FlxText(input.x, input.y - 15, 80, 'Color (Hex):');
 					txt1.cameras = state.cameras;
+					_applyTextStyle(txt1, tipTextKorean);
 					state.add(txt1);
 					state.add(input);
 				}
 			));
-		}, btnWid);
+		}, btnWid), '  Waveform...', '  파형...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Go to...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Go to...', function()
 		{
 			upperBox.isMinimized = true;
 			upperBox.bg.visible = false;
-			openSubState(new BasePrompt(420, 200, 'Go to Time/Section:',
+			openSubState(new BasePrompt(420, 200, tipTextKorean ? '시간/섹션 이동:' : 'Go to Time/Section:',
 				function(state:BasePrompt)
 				{
 					var curTime:Float = Conductor.songPosition;
@@ -4342,10 +4547,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					var sectionStepper:PsychUINumericStepper = new PsychUINumericStepper(timeStepper.x + 160, timeStepper.y, 1, currentSec, 0, PlayState.SONG.notes.length - 1, 0);
 					sectionStepper.cameras = state.cameras;
 
-					var txt1:FlxText = new FlxText(timeStepper.x, timeStepper.y - 15, 100, 'Time (in seconds):');
-					var txt2:FlxText = new FlxText(sectionStepper.x, sectionStepper.y - 15, 100, 'Section:');
+					var txt1:FlxText = new FlxText(timeStepper.x, timeStepper.y - 15, 100, tipTextKorean ? '시간 (초):' : 'Time (in seconds):');
+					var txt2:FlxText = new FlxText(sectionStepper.x, sectionStepper.y - 15, 100, tipTextKorean ? '섹션:' : 'Section:');
 					txt1.cameras = state.cameras;
 					txt2.cameras = state.cameras;
+					_applyTextStyle(txt1, tipTextKorean);
+					_applyTextStyle(txt2, tipTextKorean);
 					state.add(txt1);
 					state.add(txt2);
 					state.add(timeStepper);
@@ -4382,7 +4589,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 						updateTime();
 					};
 
-					var btn:PsychUIButton = new PsychUIButton(0, timeTxt.y + 30, 'Go To', function()
+					var btn:PsychUIButton = new PsychUIButton(0, timeTxt.y + 30, tipTextKorean ? '이동' : 'Go To', function()
 					{
 						curSec = currentSec;
 						FlxG.sound.music.time = FlxMath.bound(curTime, 0, FlxG.sound.music.length - 1);
@@ -4394,26 +4601,26 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					btn.x -= 60;
 					state.add(btn);
 
-					var btn:PsychUIButton = new PsychUIButton(0, btn.y, 'Cancel', state.close);
+					var btn:PsychUIButton = new PsychUIButton(0, btn.y, tipTextKorean ? '취소' : 'Cancel', state.close);
 					btn.cameras = state.cameras;
 					btn.screenCenter(X);
 					btn.x += 60;
 					state.add(btn);
 				}
 			));
-		}, btnWid);
+		}, btnWid), '  Go to...', '  이동...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY++;
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Theme...', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Theme...', function()
 		{
 			if(!fileDialog.completed) return;
 			upperBox.isMinimized = true;
 			upperBox.bg.visible = false;
 
-			openSubState(new BasePrompt(500, 260, 'Chart Editor Theme',
+			openSubState(new BasePrompt(500, 260, tipTextKorean ? '채보 에디터 테마' : 'Chart Editor Theme',
 				function(state:BasePrompt)
 				{
 					var btn:PsychUIButton = new PsychUIButton(state.bg.x + state.bg.width - 40, state.bg.y, 'X', state.close, 40);
@@ -4421,19 +4628,19 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					state.add(btn);
 
 					var btnY = 320;
-					var btn:PsychUIButton = new PsychUIButton(0, btnY, 'Light', changeTheme.bind(LIGHT));
+					var btn:PsychUIButton = new PsychUIButton(0, btnY, tipTextKorean ? '라이트' : 'Light', changeTheme.bind(LIGHT));
 					btn.screenCenter(X);
 					btn.x -= 180;
 					btn.cameras = state.cameras;
 					state.add(btn);
 			
-					var btn:PsychUIButton = new PsychUIButton(0, btnY, 'Dark', changeTheme.bind(DARK));
+					var btn:PsychUIButton = new PsychUIButton(0, btnY, tipTextKorean ? '다크' : 'Dark', changeTheme.bind(DARK));
 					btn.screenCenter(X);
 					btn.x -= 60;
 					btn.cameras = state.cameras;
 					state.add(btn);
 					
-					var btn:PsychUIButton = new PsychUIButton(0, btnY, 'Default', changeTheme.bind(DEFAULT));
+					var btn:PsychUIButton = new PsychUIButton(0, btnY, tipTextKorean ? '기본' : 'Default', changeTheme.bind(DEFAULT));
 					btn.screenCenter(X);
 					btn.cameras = state.cameras;
 					btn.x += 60;
@@ -4446,7 +4653,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					state.add(btn);
 
 					btnY += 60;
-					var btn:PsychUIButton = new PsychUIButton(0, btnY, 'Custom', changeTheme.bind(CUSTOM));
+					var btn:PsychUIButton = new PsychUIButton(0, btnY, tipTextKorean ? '커스텀' : 'Custom', changeTheme.bind(CUSTOM));
 					btn.screenCenter(X);
 					btn.x -= 180;
 					btn.cameras = state.cameras;
@@ -4547,17 +4754,17 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					state.add(input);
 				}
 			));
-		}, btnWid);
+		}, btnWid), '  Theme...', '  테마...');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 
 		btnY += 20;
-		var btn:PsychUIButton = new PsychUIButton(btnX, btnY, '  Reset UI Boxes', function()
+		var btn:PsychUIButton = _rB(new PsychUIButton(btnX, btnY, '  Reset UI Boxes', function()
 		{
 			mainBox.setPosition(mainBoxPosition.x, mainBoxPosition.y);
 			infoBox.setPosition(infoBoxPosition.x, infoBoxPosition.y);
 			UIEvent(PsychUIBox.DROP_EVENT, btn); //to force a save
-		}, btnWid);
+		}, btnWid), '  Reset UI Boxes', '  UI 박스 위치 초기화');
 		btn.text.alignment = LEFT;
 		tab_group.add(btn);
 	}
@@ -4653,13 +4860,22 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 	function updateGridVisibility()
 	{
-		showLastGridButton.text.text = showPreviousSection	? '  Hide Last Section' :  '  Show Last Section';
-		showNextGridButton.text.text = showNextSection		? '  Hide Next Section' :  '  Show Next Section';
+		showLastGridButton.text.text = showPreviousSection
+			? (tipTextKorean ? '  이전 섹션 숨기기' : '  Hide Last Section')
+			: (tipTextKorean ? '  이전 섹션 표시' : '  Show Last Section');
+		showNextGridButton.text.text = showNextSection
+			? (tipTextKorean ? '  다음 섹션 숨기기' : '  Hide Next Section')
+			: (tipTextKorean ? '  다음 섹션 표시' : '  Show Next Section');
 
 		prevGridBg.visible = (curSec > 0 && showPreviousSection);
 		nextGridBg.visible = (curSec < PlayState.SONG.notes.length - 1 && showNextSection);
 		
-		noteTypeLabelsButton.text.text = showNoteTypeLabels ? '  Hide Note Labels' : '  Show Note Labels';
+		noteTypeLabelsButton.text.text = showNoteTypeLabels
+			? (tipTextKorean ? '  노트 라벨 숨기기' : '  Hide Note Labels')
+			: (tipTextKorean ? '  노트 라벨 표시' : '  Show Note Labels');
+		_applyButtonStyle(showLastGridButton, tipTextKorean);
+		_applyButtonStyle(showNextGridButton, tipTextKorean);
+		_applyButtonStyle(noteTypeLabelsButton, tipTextKorean);
 		for (num => text in MetaNote.noteTypeTexts)
 			text.visible = showNoteTypeLabels;
 		softReloadNotes();

@@ -3,6 +3,7 @@ package backend.ui;
 class PsychUICheckBox extends FlxSpriteGroup
 {
 	public static final CLICK_EVENT = 'checkbox_click';
+	public static var defaultFont:String = null;
 
 	public var name:String;
 	public var box:FlxSprite;
@@ -22,6 +23,7 @@ class PsychUICheckBox extends FlxSpriteGroup
 
 		text = new FlxText(box.width + 4, 0, textWid, label);
 		text.y += box.height/2 - text.height/2;
+		if (defaultFont != null) text.font = defaultFont;
 		add(text);
 
 		this.onClick = callback;

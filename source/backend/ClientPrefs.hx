@@ -77,6 +77,8 @@ import states.TitleState;
 	public var discordRPC:Bool = true;
 	public var loadingScreen:Bool = true;
 	public var language:String = 'en-US';
+	public var ambientMode:Bool = false;
+	public var windowColorMode:String = 'System'; // 'System', 'Dark', 'Light'
 }
 
 class ClientPrefs {
@@ -256,6 +258,10 @@ class ClientPrefs {
 			}
 			reloadVolumeKeys();
 		}
+
+		#if (cpp && windows)
+		Native.applyWindowColorMode(data.windowColorMode);
+		#end
 	}
 
 	inline public static function getGameplaySetting(name:String, defaultValue:Dynamic = null, ?customDefaultValue:Bool = false):Dynamic

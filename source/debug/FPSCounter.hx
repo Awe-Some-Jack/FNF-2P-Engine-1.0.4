@@ -1,9 +1,26 @@
 package debug;
 
 import flixel.FlxG;
+import flixel.math.FlxMath;
 import openfl.text.TextField;
 import openfl.text.TextFormat;
 import openfl.system.System;
+import openfl.filters.DropShadowFilter;
+
+#if cpp
+@:cppFileCode('
+#include <windows.h>
+#include <psapi.h>
+
+extern "C" double getMemoryUsageMB() {
+    PROCESS_MEMORY_COUNTERS_EX memInfo;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&memInfo, sizeof(memInfo))) {
+        return memInfo.WorkingSetSize / (1024.0 * 1024.0);
+    }
+    return -1;
+}
+')
+#end
 
 /**
 	The FPS class provides an easy-to-use monitor to display
@@ -33,7 +50,15 @@ class FPSCounter extends TextField
 		currentFPS = 0;
 		selectable = false;
 		mouseEnabled = false;
-		defaultTextFormat = new TextFormat("_sans", 14, color);
+		var font = openfl.Assets.getFont("assets/fonts/DungGeunMo.ttf");
+		defaultTextFormat = new TextFormat(font != null ? font.fontName : "_sans", 15, color);
+		embedFonts = true;
+		filters = [
+			new DropShadowFilter(1, 0,   0x000000, 1, 0, 0),
+			new DropShadowFilter(1, 90,  0x000000, 1, 0, 0),
+			new DropShadowFilter(1, 180, 0x000000, 1, 0, 0),
+			new DropShadowFilter(1, 270, 0x000000, 1, 0, 0),
+		];
 		autoSize = LEFT;
 		multiline = true;
 		text = "FPS: ";
@@ -61,14 +86,27 @@ class FPSCounter extends TextField
 	}
 
 	public dynamic function updateText():Void { // so people can override it in hscript
-		text = 'FPS: ${currentFPS}'
-		+ '\nMemory: ${flixel.util.FlxStringUtil.formatBytes(memoryMegas)}';
+		var memStr:String = "";
+		#if cpp
+		var mem:Float = FlxMath.roundDecimal(memoryMegas, 1);
+		if (mem >= 1000)
+			memStr = '\nRAM: ${FlxMath.roundDecimal(mem / 1000, 2)} GB';
+		else
+			memStr = '\nRAM: ${mem} MB';
+		#end
+
+		text = 'FPS: ${currentFPS} / ${FlxG.updateFramerate}${memStr}';
 
 		textColor = 0xFFFFFFFF;
 		if (currentFPS < FlxG.drawFramerate * 0.5)
 			textColor = 0xFFFF0000;
 	}
 
-	inline function get_memoryMegas():Float
-		return cpp.vm.Gc.memInfo64(cpp.vm.Gc.MEM_INFO_USAGE);
+	inline function get_memoryMegas():Float {
+		#if cpp
+		return untyped __global__.getMemoryUsageMB();
+		#else
+		return 0;
+		#end
+	}
 }
