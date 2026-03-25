@@ -87,6 +87,10 @@ class Paths
 		// flags everything to be cleared out next unused memory clear
 		localTrackedAssets = [];
 		currentTrackedFrames = new Map(); // clear atlas frames cache on state transition
+		currentTrackedCharacterData = new Map();
+		pendingAtlasText = new Map();
+		_pathCache = new Map();
+		_songPathCache = new Map();
 		#if !html5 openfl.Assets.cache.clear("songs"); #end
 	}
 
@@ -155,11 +159,25 @@ class Paths
 	}
 
 	static public var currentLevel:String;
-	static public function setCurrentLevel(name:String)
+	static public function setCurrentLevel(name:String) {
 		currentLevel = name.toLowerCase();
+		_pathCache = new Map();
+	}
+
+	private static var _pathCache:Map<String, String> = new Map();
+	private static var _songPathCache:Map<String, String> = new Map();
+	private static final _invalidChars = ~/[~&;:<>#\s]/g;
+	private static final _hideChars = ~/[.,'"%?!]/g;
 
 	public static function getPath(file:String, ?type:AssetType = TEXT, ?parentfolder:String, ?modsAllowed:Bool = true):String
 	{
+		var cacheKey:String = '$file\x00${parentfolder ?? ""}\x00${modsAllowed ? 1 : 0}\x00${currentLevel ?? ""}';
+		#if MODS_ALLOWED
+		cacheKey += '\x00${Mods.currentModDirectory ?? ""}';
+		#end
+		var cached:String = _pathCache.get(cacheKey);
+		if (cached != null) return cached;
+
 		#if MODS_ALLOWED
 		if(modsAllowed)
 		{
@@ -167,24 +185,27 @@ class Paths
 			if (parentfolder != null)
 			{
 				var modded:String = modFolders('$parentfolder/$file');
-				if(FileSystem.exists(modded)) return modded;
+				if(FileSystem.exists(modded)) { _pathCache.set(cacheKey, modded); return modded; }
 			}
 			// Always try without parentfolder: mods store assets directly as 'images/...' not 'shared/images/...'
 			var modded:String = modFolders(file);
-			if(FileSystem.exists(modded)) return modded;
+			if(FileSystem.exists(modded)) { _pathCache.set(cacheKey, modded); return modded; }
 		}
 		#end
 
+		var result:String;
 		if (parentfolder != null)
-			return getFolderPath(file, parentfolder);
-
-		if (currentLevel != null && currentLevel != 'shared')
+			result = getFolderPath(file, parentfolder);
+		else if (currentLevel != null && currentLevel != 'shared')
 		{
 			var levelPath = getFolderPath(file, currentLevel);
-			if (OpenFlAssets.exists(levelPath, type))
-				return levelPath;
+			result = OpenFlAssets.exists(levelPath, type) ? levelPath : getSharedPath(file);
 		}
-		return getSharedPath(file);
+		else
+			result = getSharedPath(file);
+
+		_pathCache.set(cacheKey, result);
+		return result;
 	}
 
 	inline static public function getFolderPath(file:String, folder = "shared")
@@ -242,6 +263,8 @@ class Paths
 
 	public static var currentTrackedAssets:Map<String, FlxGraphic> = [];
 	public static var currentTrackedFrames:Map<String, FlxAtlasFrames> = new Map();
+	public static var currentTrackedCharacterData:Map<String, Dynamic> = new Map();
+	public static var pendingAtlasText:Map<String, String> = new Map();
 	static public function image(key:String, ?parentFolder:String = null, ?allowGPU:Bool = true):FlxGraphic
 	{
 		key = Language.getFileTranslation('images/$key') + '.png';
@@ -343,6 +366,19 @@ class Paths
 		var framesKey:String = imageLoaded.key;
 		if (currentTrackedFrames.exists(framesKey))
 			return currentTrackedFrames.get(framesKey);
+
+		// Check if atlas text was pre-read by LoadingState background thread
+		if (pendingAtlasText.exists(framesKey))
+		{
+			var text:String = pendingAtlasText.get(framesKey);
+			pendingAtlasText.remove(framesKey);
+			var result:FlxAtlasFrames = StringTools.ltrim(text).startsWith('<')
+				? FlxAtlasFrames.fromSparrow(imageLoaded, text)
+				: FlxAtlasFrames.fromTexturePackerJson(imageLoaded, text);
+			if (result != null)
+				currentTrackedFrames.set(framesKey, result);
+			return result;
+		}
 
 		var useMod = false;
 		var result:FlxAtlasFrames;
@@ -467,11 +503,12 @@ class Paths
 		return result;
 	}
 
-	inline static public function formatToSongPath(path:String) {
-		final invalidChars = ~/[~&;:<>#\s]/g;
-		final hideChars = ~/[.,'"%?!]/g;
-
-		return hideChars.replace(invalidChars.replace(path, '-'), '').trim().toLowerCase();
+	static public function formatToSongPath(path:String):String {
+		var cached:String = _songPathCache.get(path);
+		if (cached != null) return cached;
+		var result:String = _hideChars.replace(_invalidChars.replace(path, '-'), '').trim().toLowerCase();
+		_songPathCache.set(path, result);
+		return result;
 	}
 
 	public static var currentTrackedSounds:Map<String, Sound> = [];

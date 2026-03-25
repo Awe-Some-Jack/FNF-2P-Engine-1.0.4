@@ -712,11 +712,17 @@ class LoadingState extends MusicBeatState
 		try
 		{
 			var path:String = Paths.getPath('characters/$char.json', TEXT);
-			#if MODS_ALLOWED
-			var character:Dynamic = Json.parse(File.getContent(path));
-			#else
-			var character:Dynamic = Json.parse(Assets.getText(path));
-			#end
+			// Return cached JSON if already parsed (avoids double-parsing same character)
+			var character:Dynamic = Paths.currentTrackedCharacterData.get(path);
+			if (character == null)
+			{
+				#if MODS_ALLOWED
+				character = Json.parse(File.getContent(path));
+				#else
+				character = Json.parse(Assets.getText(path));
+				#end
+				Paths.currentTrackedCharacterData.set(path, character);
+			}
 
 			var isAnimateAtlas:Bool = false;
 			var img:String = character.image;
@@ -817,6 +823,32 @@ class LoadingState extends MusicBeatState
 					requestedBitmaps.set(file, bitmap);
 					originalBitmapKeys.set(file, requestKey);
 					mutex.release();
+
+					// Pre-read atlas XML/JSON in the background thread so the main thread doesn't have to
+					#if sys
+					var dotIdx:Int = file.lastIndexOf('.');
+					var fileNoExt:String = dotIdx >= 0 ? file.substr(0, dotIdx) : file;
+					var xmlFile:String = fileNoExt + '.xml';
+					if (FileSystem.exists(xmlFile))
+					{
+						var text:String = File.getContent(xmlFile);
+						mutex.acquire();
+						Paths.pendingAtlasText.set(requestKey, text);
+						mutex.release();
+					}
+					else
+					{
+						var jsonFile:String = fileNoExt + '.json';
+						if (FileSystem.exists(jsonFile))
+						{
+							var text:String = File.getContent(jsonFile);
+							mutex.acquire();
+							Paths.pendingAtlasText.set(requestKey, text);
+							mutex.release();
+						}
+					}
+					#end
+
 					return bitmap;
 				}
 				else trace('no such image $key exists');

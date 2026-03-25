@@ -354,7 +354,7 @@ class Note extends FlxSprite
 	}
 
 	var _lastNoteOffX:Float = 0;
-	static var _lastValidChecked:String; //optimization
+	static var _skinExistsCache:Map<String, Bool> = new Map(); //optimization
 	public var originalHeight:Float = 6;
 	public var correctionOffset:Float = 0; //dont mess with this
 	public function reloadNote(texture:String = '', postfix:String = '') {
@@ -380,22 +380,34 @@ class Note extends FlxSprite
 		var skinPostfix:String = getNoteSkinPostfix();
 		var customSkin:String = skin + skinPostfix;
 		var path:String = PlayState.isPixelStage ? 'pixelUI/' : '';
-		if(customSkin == _lastValidChecked || Paths.fileExists('images/' + path + customSkin + '.png', IMAGE))
+		var cKey:String = path + customSkin;
+		if (!_skinExistsCache.exists(cKey))
+			_skinExistsCache.set(cKey, Paths.fileExists('images/' + cKey + '.png', IMAGE));
+		if (_skinExistsCache.get(cKey))
 		{
 			skin = customSkin;
-			_lastValidChecked = customSkin;
 		}
 		else {
 			skinPostfix = '';
-			if(skin != _lastValidChecked && !Paths.fileExists('images/' + path + skin + '.png', IMAGE))
+			var sKey:String = path + skin;
+			if (!_skinExistsCache.exists(sKey))
+				_skinExistsCache.set(sKey, Paths.fileExists('images/' + sKey + '.png', IMAGE));
+			if (!_skinExistsCache.get(sKey))
 			{
 				// fallback: try legacy path without noteSkins/ subfolder (0.6.3 compat)
 				var legacySkin:String = skin.startsWith('noteSkins/') ? skin.substr(10) : null;
-				if(legacySkin != null && legacySkin.length > 0 && Paths.fileExists('images/' + path + legacySkin + '.png', IMAGE))
-					skin = legacySkin;
+				if (legacySkin != null && legacySkin.length > 0)
+				{
+					var lKey:String = path + legacySkin;
+					if (!_skinExistsCache.exists(lKey))
+						_skinExistsCache.set(lKey, Paths.fileExists('images/' + lKey + '.png', IMAGE));
+					if (_skinExistsCache.get(lKey))
+						skin = legacySkin;
+					else
+						skin = defaultNoteSkin;
+				}
 				else
 					skin = defaultNoteSkin;
-				_lastValidChecked = skin;
 			}
 		}
 
@@ -514,7 +526,7 @@ class Note extends FlxSprite
 	override public function destroy()
 	{
 		super.destroy();
-		_lastValidChecked = '';
+		// _skinExistsCache is a static Map shared across all notes, no per-instance cleanup needed
 	}
 
 	public function followStrumNote(myStrum:StrumNote, fakeCrochet:Float, songSpeed:Float = 1)

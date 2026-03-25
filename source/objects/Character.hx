@@ -124,11 +124,19 @@ class Character extends FlxSprite
 
 		try
 		{
-			#if MODS_ALLOWED
-			loadCharacterFile(Json.parse(File.getContent(path)));
-			#else
-			loadCharacterFile(Json.parse(Assets.getText(path)));
-			#end
+			var cached:Dynamic = Paths.currentTrackedCharacterData.get(path);
+			if (cached != null)
+				loadCharacterFile(cached);
+			else
+			{
+				#if MODS_ALLOWED
+				var parsed:Dynamic = Json.parse(File.getContent(path));
+				#else
+				var parsed:Dynamic = Json.parse(Assets.getText(path));
+				#end
+				Paths.currentTrackedCharacterData.set(path, parsed);
+				loadCharacterFile(parsed);
+			}
 		}
 		catch(e:Dynamic)
 		{
