@@ -192,6 +192,8 @@ class FunkinLua {
 		set('flashingLights', ClientPrefs.data.flashing);
 		set('noteOffset', ClientPrefs.data.noteOffset);
 		set('healthBarAlpha', ClientPrefs.data.healthBarAlpha);
+		set('fpsTextSize', ClientPrefs.data.fpsTextSize);
+		set('fpsTextAlpha', ClientPrefs.data.fpsTextAlpha);
 		set('noResetButton', ClientPrefs.data.noReset);
 		set('lowQuality', ClientPrefs.data.lowQuality);
 		set('shadersEnabled', ClientPrefs.data.shaders);
@@ -207,6 +209,25 @@ class FunkinLua {
 
 		// build target (windows, mac, linux, etc.)
 		set('buildTarget', LuaUtils.getBuildTarget());
+
+		Lua_helper.add_callback(lua, "setFPSTextSize", function(size:Int) {
+			#if !mobile
+			ClientPrefs.data.fpsTextSize = Std.int(Math.max(8, Math.min(48, size)));
+			if (Main.fpsVar != null) Main.fpsVar.applySettings();
+			#end
+		});
+		Lua_helper.add_callback(lua, "getFPSTextSize", function() {
+			return ClientPrefs.data.fpsTextSize;
+		});
+		Lua_helper.add_callback(lua, "setFPSTextAlpha", function(alpha:Float) {
+			#if !mobile
+			ClientPrefs.data.fpsTextAlpha = Math.max(0, Math.min(1, alpha));
+			if (Main.fpsVar != null) Main.fpsVar.applySettings();
+			#end
+		});
+		Lua_helper.add_callback(lua, "getFPSTextAlpha", function() {
+			return ClientPrefs.data.fpsTextAlpha;
+		});
 
 		//
 		Lua_helper.add_callback(lua, "getRunningScripts", function() {

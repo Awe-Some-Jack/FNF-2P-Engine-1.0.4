@@ -128,6 +128,28 @@ class VisualsSettingsSubState extends BaseOptionsMenu
 			BOOL);
 		addOption(option);
 		option.onChange = onChangeFPSCounter;
+
+		var option:Option = new Option('FPS Text Size',
+			'Set the font size of the FPS counter.',
+			'fpsTextSize',
+			INT);
+		option.minValue = 8;
+		option.maxValue = 48;
+		option.changeValue = 1;
+		addOption(option);
+		option.onChange = onChangeFPSAppearance;
+
+		var option:Option = new Option('FPS Text Opacity',
+			'How transparent the FPS counter text is.',
+			'fpsTextAlpha',
+			PERCENT);
+		option.scrollSpeed = 1.6;
+		option.minValue = 0.0;
+		option.maxValue = 1;
+		option.changeValue = 0.1;
+		option.decimals = 1;
+		addOption(option);
+		option.onChange = onChangeFPSAppearance;
 		#end
 		
 		var option:Option = new Option('Pause Music:',
@@ -322,6 +344,12 @@ class VisualsSettingsSubState extends BaseOptionsMenu
 	{
 		if(Main.fpsVar != null)
 			Main.fpsVar.visible = ClientPrefs.data.showFPS;
+	}
+
+	function onChangeFPSAppearance()
+	{
+		if(Main.fpsVar != null)
+			Main.fpsVar.applySettings();
 	}
 	#end
 }

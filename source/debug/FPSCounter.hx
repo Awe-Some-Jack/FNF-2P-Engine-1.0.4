@@ -6,6 +6,7 @@ import openfl.text.TextField;
 import openfl.text.TextFormat;
 import openfl.system.System;
 import openfl.filters.DropShadowFilter;
+import backend.ClientPrefs;
 
 #if cpp
 @:cppFileCode('
@@ -13,11 +14,49 @@ import openfl.filters.DropShadowFilter;
 #include <psapi.h>
 
 extern "C" double getMemoryUsageMB() {
-    PROCESS_MEMORY_COUNTERS_EX memInfo;
-    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&memInfo, sizeof(memInfo))) {
-        return memInfo.WorkingSetSize / (1024.0 * 1024.0);
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    DWORD pageSize = si.dwPageSize;
+
+    // First call: get number of entries needed
+    PSAPI_WORKING_SET_INFORMATION wsHint = {0};
+    QueryWorkingSet(GetCurrentProcess(), &wsHint, sizeof(wsHint));
+    // wsHint.NumberOfEntries now holds required count (even on ERROR_BAD_LENGTH)
+
+    ULONG_PTR needed = wsHint.NumberOfEntries + 512; // extra room for growth
+    SIZE_T bufSize = sizeof(PSAPI_WORKING_SET_INFORMATION)
+                   + needed * sizeof(PSAPI_WORKING_SET_BLOCK);
+
+    PSAPI_WORKING_SET_INFORMATION* ws =
+        (PSAPI_WORKING_SET_INFORMATION*)VirtualAlloc(
+            NULL, bufSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!ws) {
+        // Fallback to WorkingSetSize
+        PROCESS_MEMORY_COUNTERS pmc = {sizeof(pmc)};
+        GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+        return pmc.WorkingSetSize / (1024.0 * 1024.0);
     }
-    return -1;
+
+    ws->NumberOfEntries = needed;
+    BOOL ok = QueryWorkingSet(GetCurrentProcess(), ws, (DWORD)bufSize);
+
+    double result = -1.0;
+    if (ok) {
+        SIZE_T privatePages = 0;
+        for (ULONG_PTR i = 0; i < ws->NumberOfEntries; i++) {
+            if (!ws->WorkingSetInfo[i].Shared)
+                privatePages++;
+        }
+        result = (privatePages * (double)pageSize) / (1024.0 * 1024.0);
+    } else {
+        // Fallback
+        PROCESS_MEMORY_COUNTERS pmc = {sizeof(pmc)};
+        GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+        result = pmc.WorkingSetSize / (1024.0 * 1024.0);
+    }
+
+    VirtualFree(ws, 0, MEM_RELEASE);
+    return result;
 }
 ')
 #end
@@ -50,23 +89,38 @@ class FPSCounter extends TextField
 		currentFPS = 0;
 		selectable = false;
 		mouseEnabled = false;
-		var font = openfl.Assets.getFont("assets/fonts/DungGeunMo.ttf");
-		defaultTextFormat = new TextFormat(font != null ? font.fontName : "_sans", 15, color);
+		_font = openfl.Assets.getFont("assets/fonts/DungGeunMo.ttf");
+		defaultTextFormat = new TextFormat(_font != null ? _font.fontName : "_sans", ClientPrefs.data.fpsTextSize, color);
 		embedFonts = true;
 		filters = [
-			new DropShadowFilter(1, 0,   0x000000, 1, 0, 0),
-			new DropShadowFilter(1, 90,  0x000000, 1, 0, 0),
-			new DropShadowFilter(1, 180, 0x000000, 1, 0, 0),
-			new DropShadowFilter(1, 270, 0x000000, 1, 0, 0),
+			new DropShadowFilter(1, 0,   0x464646, 1, 0, 0),
+			new DropShadowFilter(1, 90,  0x464646, 1, 0, 0),
+			new DropShadowFilter(1, 180, 0x464646, 1, 0, 0),
+			new DropShadowFilter(1, 270, 0x464646, 1, 0, 0),
 		];
 		autoSize = LEFT;
 		multiline = true;
 		text = "FPS: ";
+		alpha = ClientPrefs.data.fpsTextAlpha;
 
 		times = [];
 	}
 
+	var _font:openfl.text.Font;
+
+	public function applySettings():Void {
+		var fmt = defaultTextFormat;
+		fmt.size = ClientPrefs.data.fpsTextSize;
+		defaultTextFormat = fmt;
+		setTextFormat(fmt);
+		alpha = ClientPrefs.data.fpsTextAlpha;
+		_lastColor = -1; // force filter refresh
+	}
+
 	var deltaTimeout:Float = 0.0;
+	var ramTimeout:Float = 0.0;
+	var cachedMemStr:String = "";
+	var _lastColor:Int = -1;
 
 	// Event Handlers
 	private override function __enterFrame(deltaTime:Float):Void
@@ -74,32 +128,45 @@ class FPSCounter extends TextField
 		final now:Float = haxe.Timer.stamp() * 1000;
 		times.push(now);
 		while (times[0] < now - 1000) times.shift();
-		// prevents the overlay from updating every frame, why would you need to anyways @crowplexus
-		if (deltaTimeout < 50) {
-			deltaTimeout += deltaTime;
-			return;
-		}
+		deltaTimeout += deltaTime;
+		ramTimeout += deltaTime;
+		if (deltaTimeout < 250) return;
 
-		currentFPS = times.length < FlxG.updateFramerate ? times.length : FlxG.updateFramerate;		
+		#if cpp
+		if (ramTimeout >= 1000) {
+			var mem:Float = FlxMath.roundDecimal(memoryMegas, 1);
+			if (mem >= 1000)
+				cachedMemStr = '\nRAM: ${FlxMath.roundDecimal(mem / 1000, 2)} GB';
+			else
+				cachedMemStr = '\nRAM: ${mem} MB';
+			ramTimeout = 0.0;
+		}
+		#end
+
+		currentFPS = times.length < FlxG.updateFramerate ? times.length : FlxG.updateFramerate;
 		updateText();
 		deltaTimeout = 0.0;
 	}
 
 	public dynamic function updateText():Void { // so people can override it in hscript
-		var memStr:String = "";
-		#if cpp
-		var mem:Float = FlxMath.roundDecimal(memoryMegas, 1);
-		if (mem >= 1000)
-			memStr = '\nRAM: ${FlxMath.roundDecimal(mem / 1000, 2)} GB';
-		else
-			memStr = '\nRAM: ${mem} MB';
-		#end
+		text = 'FPS: ${currentFPS} / ${FlxG.updateFramerate}${cachedMemStr}';
 
-		text = 'FPS: ${currentFPS} / ${FlxG.updateFramerate}${memStr}';
-
-		textColor = 0xFFFFFFFF;
 		if (currentFPS < FlxG.drawFramerate * 0.5)
-			textColor = 0xFFFF0000;
+			setColorWithOutline(0xFFFF0000, 0xFF5C0000);
+		else
+			setColorWithOutline(0xFFFFFFFF, 0xFF383838);
+	}
+
+	inline function setColorWithOutline(color:Int, outline:Int = 0x000000):Void {
+		if (_lastColor == color) return;
+		_lastColor = color;
+		textColor = color;
+		filters = [
+			new DropShadowFilter(1, 0,   outline, 1, 0, 0),
+			new DropShadowFilter(1, 90,  outline, 1, 0, 0),
+			new DropShadowFilter(1, 180, outline, 1, 0, 0),
+			new DropShadowFilter(1, 270, outline, 1, 0, 0),
+		];
 	}
 
 	inline function get_memoryMegas():Float {

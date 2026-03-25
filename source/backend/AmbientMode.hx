@@ -4,20 +4,15 @@ import lime.app.Application;
 import lime.graphics.Image;
 import flixel.util.FlxColor;
 
-/**
- * Ambient Mode — PlayState 내에서만 동작합니다.
- * GPU 프레임버퍼(window.readPixels)에서 가장자리 픽셀 평균 색을 읽어
- * Windows 창 타이틀바/테두리 색에 반영합니다.
- */
 class AmbientMode
 {
-	/** PlayState.create() → true, PlayState.destroy() → false 로 제어 */
+
 	public static var isInPlayState:Bool = false;
 
 	static var frameCount:Int = 0;
-	static var currentR:Int = 0;
-	static var currentG:Int = 0;
-	static var currentB:Int = 0;
+	static var currentR:Int = -1;
+	static var currentG:Int = -1;
+	static var currentB:Int = -1;
 	static var targetR:Int = 0;
 	static var targetG:Int = 0;
 	static var targetB:Int = 0;
@@ -30,15 +25,14 @@ class AmbientMode
 	public static function update(elapsed:Float):Void
 	{
 		#if (cpp && windows)
-		// 옵션 꺼져있거나 PlayState 밖이면 리셋 후 종료
 		if (!ClientPrefs.data.ambientMode || !isInPlayState)
 		{
 			if (wasActive)
 			{
 				wasActive = false;
-				currentR = currentG = currentB = 0;
+				currentR = currentG = currentB = -1;
 				targetR = targetG = targetB = 0;
-				Native.resetWindowCaptionColor();
+				Native.applyWindowColorMode(ClientPrefs.data.windowColorMode);
 			}
 			return;
 		}
@@ -50,11 +44,17 @@ class AmbientMode
 			sampleScreenColor();
 
 		var t = Math.min(elapsed * LERP_SPEED, 1.0);
-		currentR = Std.int(currentR + (targetR - currentR) * t);
-		currentG = Std.int(currentG + (targetG - currentG) * t);
-		currentB = Std.int(currentB + (targetB - currentB) * t);
+		var newR = Std.int((currentR < 0 ? targetR : currentR) + (targetR - (currentR < 0 ? targetR : currentR)) * t);
+		var newG = Std.int((currentG < 0 ? targetG : currentG) + (targetG - (currentG < 0 ? targetG : currentG)) * t);
+		var newB = Std.int((currentB < 0 ? targetB : currentB) + (targetB - (currentB < 0 ? targetB : currentB)) * t);
 
-		Native.setWindowCaptionColor(currentR, currentG, currentB);
+		if (newR != currentR || newG != currentG || newB != currentB)
+		{
+			currentR = newR;
+			currentG = newG;
+			currentB = newB;
+			Native.setWindowCaptionColor(currentR, currentG, currentB);
+		}
 		#end
 	}
 
@@ -63,15 +63,14 @@ class AmbientMode
 		#if (cpp && windows)
 		isInPlayState = false;
 		wasActive = false;
-		currentR = currentG = currentB = 0;
+		currentR = currentG = currentB = -1;
 		targetR = targetG = targetB = 0;
-		Native.resetWindowCaptionColor();
+		Native.applyWindowColorMode(ClientPrefs.data.windowColorMode);
 		#end
 	}
 
 	static function sampleScreenColor():Void
 	{
-		// ── 방법 1: GPU 프레임버퍼 직접 읽기 ──────────────────────────
 		var window = Application.current.window;
 		if (window != null)
 		{
@@ -85,7 +84,6 @@ class AmbientMode
 			}
 		}
 
-		// ── 방법 2: 카메라 bgColor 폴백 ──────────────────────────────
 		var col:FlxColor = FlxG.camera.bgColor;
 		targetR = col.red;
 		targetG = col.green;
@@ -101,7 +99,6 @@ class AmbientMode
 		var step  = EDGE_STEP;
 		var r = 0, g = 0, b = 0, count = 0;
 
-		// 상단 / 하단 행
 		var x = 0;
 		while (x < imgW)
 		{
@@ -115,7 +112,6 @@ class AmbientMode
 			x += step;
 		}
 
-		// 좌측 / 우측 열
 		var y = step;
 		while (y < imgH - step)
 		{

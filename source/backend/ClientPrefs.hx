@@ -79,6 +79,8 @@ import states.TitleState;
 	public var language:String = 'en-US';
 	public var ambientMode:Bool = false;
 	public var windowColorMode:String = 'System'; // 'System', 'Dark', 'Light'
+	public var fpsTextSize:Int = 15;
+	public var fpsTextAlpha:Float = 1.0;
 }
 
 class ClientPrefs {
