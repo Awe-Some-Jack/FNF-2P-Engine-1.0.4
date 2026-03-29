@@ -234,6 +234,8 @@ class HoldSplashEffect extends FlxGroup
 						setSplashPosition(splash, strum, isOpponent, i, linkedNote);
 						if (linkedNote != null)
 							splash.alpha = strum.alpha;
+							// splash.cameras = strum.cameras;
+							// splash.scrollFactor.set(strum.scrollFactor.x, strum.scrollFactor.y);
 					}
 				}
 

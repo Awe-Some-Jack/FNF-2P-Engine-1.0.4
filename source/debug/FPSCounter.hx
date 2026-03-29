@@ -14,49 +14,10 @@ import backend.ClientPrefs;
 #include <psapi.h>
 
 extern "C" double getMemoryUsageMB() {
-    SYSTEM_INFO si;
-    GetSystemInfo(&si);
-    DWORD pageSize = si.dwPageSize;
-
-    // First call: get number of entries needed
-    PSAPI_WORKING_SET_INFORMATION wsHint = {0};
-    QueryWorkingSet(GetCurrentProcess(), &wsHint, sizeof(wsHint));
-    // wsHint.NumberOfEntries now holds required count (even on ERROR_BAD_LENGTH)
-
-    ULONG_PTR needed = wsHint.NumberOfEntries + 512; // extra room for growth
-    SIZE_T bufSize = sizeof(PSAPI_WORKING_SET_INFORMATION)
-                   + needed * sizeof(PSAPI_WORKING_SET_BLOCK);
-
-    PSAPI_WORKING_SET_INFORMATION* ws =
-        (PSAPI_WORKING_SET_INFORMATION*)VirtualAlloc(
-            NULL, bufSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!ws) {
-        // Fallback to WorkingSetSize
-        PROCESS_MEMORY_COUNTERS pmc = {sizeof(pmc)};
-        GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+    PROCESS_MEMORY_COUNTERS pmc = {sizeof(pmc)};
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
         return pmc.WorkingSetSize / (1024.0 * 1024.0);
-    }
-
-    ws->NumberOfEntries = needed;
-    BOOL ok = QueryWorkingSet(GetCurrentProcess(), ws, (DWORD)bufSize);
-
-    double result = -1.0;
-    if (ok) {
-        SIZE_T privatePages = 0;
-        for (ULONG_PTR i = 0; i < ws->NumberOfEntries; i++) {
-            if (!ws->WorkingSetInfo[i].Shared)
-                privatePages++;
-        }
-        result = (privatePages * (double)pageSize) / (1024.0 * 1024.0);
-    } else {
-        // Fallback
-        PROCESS_MEMORY_COUNTERS pmc = {sizeof(pmc)};
-        GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
-        result = pmc.WorkingSetSize / (1024.0 * 1024.0);
-    }
-
-    VirtualFree(ws, 0, MEM_RELEASE);
-    return result;
+    return 0.0;
 }
 ')
 #end

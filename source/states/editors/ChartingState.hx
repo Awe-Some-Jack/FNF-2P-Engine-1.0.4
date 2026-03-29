@@ -13,6 +13,10 @@ import lime.media.AudioBuffer;
 
 import flash.media.Sound;
 import flash.geom.Rectangle;
+import flash.geom.Matrix;
+import flash.geom.Point;
+import flash.display.BitmapData;
+import flash.filters.ColorMatrixFilter;
 
 import haxe.Json;
 import haxe.Exception;
@@ -46,6 +50,7 @@ enum abstract UndoAction(String)
 	var DELETE_NOTE = 'Delete Note';
 	var MOVE_NOTE = 'Move Note';
 	var SELECT_NOTE = 'Select Note';
+	var SUSTAIN_CHANGE = 'Sustain Change';
 }
 
 enum abstract ChartingTheme(String)
@@ -181,6 +186,34 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 	var isMovingNotes:Bool = false;
 	var movingNotesLastData:Int = 0;
 	var movingNotesLastY:Float = 0;
+
+	var lilStage:FlxSprite;
+	var lilBf:FlxSprite;
+	var lilOpp:FlxSprite;
+	var lilBuddiesCheckBox:PsychUICheckBox;
+	var lilBfIdleTimer:Float = 0;
+	var lilOppIdleTimer:Float = 0;
+
+	// Minimap
+	var minimapBg:FlxSprite;
+	var minimapCanvas:FlxSprite;
+	var minimapViewport:FlxSprite;
+	var minimapSectionHighlight:FlxSprite;
+	var minimapCursor:FlxSprite;
+	var minimapTimeText:FlxText;
+	var minimapSectionText:FlxText;
+	var minimapDirty:Bool = true;
+	var minimapDragging:Bool = false;
+
+	// E/Q sustain hold
+	var _sustainHoldTimer:Float = 0.0;
+	var _sustainHoldAccum:Float = 0.0;
+	var _sustainHoldWasActive:Bool = false;
+	var _sustainHoldOldValues:Array<{note:MetaNote, sustain:Float}> = [];
+	var _mmX:Float = 0;
+	var _mmW:Int = 0;
+	final _mmH:Int = 720;
+	var _minimapNoteCache:Array<BitmapData> = null;
 	
 	var vocals:FlxSound = new FlxSound();
 	var opponentVocals:FlxSound = new FlxSound();
@@ -507,6 +540,37 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		selectionBox.visible = false;
 		add(selectionBox);
 
+		lilStage = new FlxSprite(32, 432).loadGraphic(Paths.image('chartEditor/lilStage'));
+		lilStage.scrollFactor.set();
+		add(lilStage);
+
+		lilBf = new FlxSprite(32, 432).loadGraphic(Paths.image('chartEditor/lilBf'), true, 300, 256);
+		lilBf.animation.add('idle', [0, 1], 12, true);
+		lilBf.animation.add('0', [3, 4, 5], 12, false);
+		lilBf.animation.add('1', [6, 7, 8], 12, false);
+		lilBf.animation.add('2', [9, 10, 11], 12, false);
+		lilBf.animation.add('3', [12, 13, 14], 12, false);
+		lilBf.animation.add('yeah', [17, 20, 23], 12, false);
+		lilBf.animation.play('idle');
+		lilBf.animation.finishCallback = function(name:String) {
+			lilBf.animation.play(name, true, false, lilBf.animation.getByName(name).numFrames - 2);
+		};
+		lilBf.scrollFactor.set();
+		add(lilBf);
+
+		lilOpp = new FlxSprite(32, 432).loadGraphic(Paths.image('chartEditor/lilOpp'), true, 300, 256);
+		lilOpp.animation.add('idle', [0, 1], 12, true);
+		lilOpp.animation.add('0', [3, 4, 5], 12, false);
+		lilOpp.animation.add('1', [6, 7, 8], 12, false);
+		lilOpp.animation.add('2', [9, 10, 11], 12, false);
+		lilOpp.animation.add('3', [12, 13, 14], 12, false);
+		lilOpp.animation.play('idle');
+		lilOpp.animation.finishCallback = function(name:String) {
+			lilOpp.animation.play(name, true, false, lilOpp.animation.getByName(name).numFrames - 2);
+		};
+		lilOpp.scrollFactor.set();
+		add(lilOpp);
+
 		infoBox = new PsychUIBox(infoBoxPosition.x, infoBoxPosition.y, 220, 220, ['Information']);
 		infoBox.scrollFactor.set();
 		infoBox.cameras = [camUI];
@@ -614,6 +678,51 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		tipText.borderSize = 1;
 		tipText.active = false;
 		add(tipText);
+
+		_mmX = gridBg.x + gridBg.width + 4;
+		_mmW = Std.int(mainBoxPosition.x - _mmX - 4);
+		if(_mmW < 10) _mmW = 10;
+
+		minimapBg = new FlxSprite(_mmX, 0).makeGraphic(_mmW, _mmH, 0xEE111111);
+		minimapBg.scrollFactor.set();
+		minimapBg.cameras = [camUI];
+		add(minimapBg);
+
+		minimapCanvas = new FlxSprite(_mmX, 0).makeGraphic(_mmW, _mmH, FlxColor.TRANSPARENT);
+		minimapCanvas.scrollFactor.set();
+		minimapCanvas.cameras = [camUI];
+		add(minimapCanvas);
+
+		minimapViewport = new FlxSprite(_mmX, 0).makeGraphic(_mmW, 4, 0x44FFFFFF);
+		minimapViewport.scrollFactor.set();
+		minimapViewport.cameras = [camUI];
+		add(minimapViewport);
+
+		minimapSectionHighlight = new FlxSprite(_mmX, 0).makeGraphic(_mmW, 4, 0x336688FF);
+		minimapSectionHighlight.scrollFactor.set();
+		minimapSectionHighlight.cameras = [camUI];
+		add(minimapSectionHighlight);
+
+		minimapCursor = new FlxSprite(_mmX, 0).makeGraphic(_mmW, 3, 0xFFFFFFFF);
+		minimapCursor.scrollFactor.set();
+		minimapCursor.cameras = [camUI];
+		add(minimapCursor);
+
+		minimapTimeText = new FlxText(_mmX, 2, _mmW, '', 8);
+		minimapTimeText.setFormat(null, 8, FlxColor.WHITE, CENTER);
+		minimapTimeText.borderStyle = OUTLINE_FAST;
+		minimapTimeText.borderSize = 1;
+		minimapTimeText.scrollFactor.set();
+		minimapTimeText.cameras = [camUI];
+		add(minimapTimeText);
+
+		minimapSectionText = new FlxText(_mmX, 20, _mmW, '', 8);
+		minimapSectionText.setFormat(null, 8, 0xFFFFDD44, CENTER);
+		minimapSectionText.borderStyle = OUTLINE_FAST;
+		minimapSectionText.borderSize = 1;
+		minimapSectionText.scrollFactor.set();
+		minimapSectionText.cameras = [camUI];
+		add(minimapSectionText);
 
 		tipBg = new FlxSprite().makeGraphic(1, 1, FlxColor.BLACK);
 		tipBg.cameras = [camUI];
@@ -790,7 +899,9 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			"",
 			"Alt + 클릭 - 노트 선택",
 			"Shift + 클릭 - 노트 선택/해제",
-			"우클릭 - 선택 박스",
+			"우클릭 드래그 - 범위 선택",
+			"(선택 후) Ctrl + 좌클릭 드래그 - 노트 이동",
+			"(선택 후) Ctrl + Shift + 좌클릭 드래그 - 노트 이동 (스냅 무시)",
 			"",
 			"R - 현재 섹션 초기화",
 			"Shift + R - 곡 처음으로 이동",
@@ -822,7 +933,9 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			"",
 			"Alt + Click - Select Note(s)",
 			"Shift + Click - Select/Unselect Note(s)",
-			"Right Click - Selection Box",
+			"Right Click Drag - Selection Box",
+			"(Selected) Ctrl + Left Click Drag - Move Notes",
+			"(Selected) Ctrl + Shift + Left Click Drag - Move Notes (Ignore Snap)",
 			"",
 			"R - Reset Section",
 			"Shift + R - Go Back to the Start of the Song",
@@ -1120,7 +1233,12 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				else if(FlxG.keys.pressed.W != FlxG.keys.pressed.S || FlxG.mouse.wheel != 0)
 				{
 					if(FlxG.sound.music.playing)
+					{
 						setSongPlaying(false);
+						lilBf.animation.play('idle');
+						lilOpp.animation.play('idle');
+						lilBfIdleTimer = lilOppIdleTimer = 0;
+					}
 
 					if(mouseSnapCheckBox.checked && FlxG.mouse.wheel != 0)
 					{
@@ -1145,6 +1263,9 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				else if(FlxG.keys.justPressed.SPACE)
 				{
 					setSongPlaying(!FlxG.sound.music.playing);
+					lilBf.animation.play('idle');
+					lilOpp.animation.play('idle');
+					lilBfIdleTimer = lilOppIdleTimer = 0;
 				}
 			}
 
@@ -1343,9 +1464,81 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 						}
 						positionNoteYOnTime(event, secNum);
 					}
+					minimapDirty = true;
 					loadSection();
 					showOutput('Zoom: ${Math.round(curZoom * 100)}%');
 					updateScrollY();
+				}
+			}
+		}
+
+		// E = 서스테인 늘리기, Q = 서스테인 줄이기 (선택된 노트에 적용)
+		if(PsychUIInputText.focusOn == null && lastFocus == null && !isMovingNotes)
+		{
+			var holdE:Bool = FlxG.keys.pressed.E && !FlxG.keys.pressed.CONTROL;
+			var holdQ:Bool = FlxG.keys.pressed.Q && !FlxG.keys.pressed.CONTROL;
+			var sustainActive:Bool = selectedNotes.length > 0 && (holdE != holdQ);
+
+			if(sustainActive)
+			{
+				if(!_sustainHoldWasActive)
+				{
+					_sustainHoldOldValues = [];
+					for(note in selectedNotes)
+						if(!note.isEvent)
+							_sustainHoldOldValues.push({note: note, sustain: note.sustainLength});
+					_sustainHoldTimer = 0.0;
+					_sustainHoldAccum = 0.0;
+					_sustainHoldWasActive = true;
+				}
+
+				_sustainHoldTimer += elapsed;
+				var stepsThisFrame:Int = 0;
+
+				if(FlxG.keys.justPressed.E || FlxG.keys.justPressed.Q)
+				{
+					stepsThisFrame = 1;
+				}
+				else if(_sustainHoldTimer >= 0.35)
+				{
+					_sustainHoldAccum += elapsed;
+					final repeatInterval:Float = 1.0 / 10.0; // 초당 10스텝
+					while(_sustainHoldAccum >= repeatInterval)
+					{
+						_sustainHoldAccum -= repeatInterval;
+						stepsThisFrame++;
+					}
+				}
+
+				if(stepsThisFrame > 0)
+				{
+					var stepCrochet:Float = cachedSectionCrochets[curSec] / 4;
+					var delta:Float = (holdE ? 1 : -1) * stepCrochet * stepsThisFrame;
+					for(note in selectedNotes)
+					{
+						if(note.isEvent) continue;
+						note.setSustainLength(note.sustainLength + delta, stepCrochet, curZoom);
+					}
+					minimapDirty = true;
+				}
+			}
+			else if(_sustainHoldWasActive)
+			{
+				_sustainHoldWasActive = false;
+				if(_sustainHoldOldValues.length > 0)
+				{
+					var anyChanged:Bool = false;
+					for(entry in _sustainHoldOldValues)
+						if(entry.note.sustainLength != entry.sustain) { anyChanged = true; break; }
+
+					if(anyChanged)
+					{
+						var newValues:Array<{note:MetaNote, sustain:Float}> = [];
+						for(entry in _sustainHoldOldValues)
+							newValues.push({note: entry.note, sustain: entry.note.sustainLength});
+						addUndoAction(SUSTAIN_CHANGE, {oldValues: _sustainHoldOldValues, newValues: newValues});
+					}
+					_sustainHoldOldValues = [];
 				}
 			}
 		}
@@ -1489,6 +1682,11 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 						}
 
 						note.setStrumTime(Math.max(-5000, note.strumTime + (diff * cachedSectionCrochets[curSecRow] / 4) / GRID_SIZE * curZoom));
+						if(!FlxG.keys.pressed.SHIFT)
+						{
+							var snapUnit:Float = Conductor.stepCrochet * 16 / curQuant;
+							note.setStrumTime(Math.round(note.strumTime / snapUnit) * snapUnit);
+						}
 						positionNoteYOnTime(note, curSecRow);
 						if(note.isEvent) cast (note, EventMetaNote).updateEventText();
 					}
@@ -1670,6 +1868,19 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 							strumNote.resetAnim = Math.max(Conductor.stepCrochet * 1.25, note.sustainLength) / 1000 / playbackRate;
 						}
 					}
+
+					var dir:String = '' + (note.songData[1] % 4);
+					var holdDur:Float = note.sustainLength > 0 ? (note.sustainLength / 1000 / playbackRate + 0.15) : 1.0;
+					if(note.mustPress)
+					{
+						lilBf.animation.play(dir, true);
+						lilBfIdleTimer = Math.max(lilBfIdleTimer, holdDur);
+					}
+					else
+					{
+						lilOpp.animation.play(dir, true);
+						lilOppIdleTimer = Math.max(lilOppIdleTimer, holdDur);
+					}
 				}
 			}
 			forceDataUpdate = false;
@@ -1679,6 +1890,19 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				FlxG.sound.play(Paths.sound('Metronome_Tick'), metronomeStepper.value);
 
 			lastBeatHit = curBeat;
+		}
+
+		if(lilBfIdleTimer > 0)
+		{
+			lilBfIdleTimer -= elapsed;
+			if(lilBfIdleTimer <= 0 && lilBf.animation.curAnim != null && lilBf.animation.curAnim.name != 'idle')
+				lilBf.animation.play('idle');
+		}
+		if(lilOppIdleTimer > 0)
+		{
+			lilOppIdleTimer -= elapsed;
+			if(lilOppIdleTimer <= 0 && lilOpp.animation.curAnim != null && lilOpp.animation.curAnim.name != 'idle')
+				lilOpp.animation.play('idle');
 		}
 
 		if(selectedNotes.length > 0)
@@ -1722,6 +1946,8 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		outputTxt.visible = (outputAlpha > 0);
 		FlxG.camera.scroll.y = scrollY;
 		lastFocus = PsychUIInputText.focusOn;
+
+		updateMinimap(elapsed);
 	}
 
 	function moveSelectedNotes(noteData:Int = 0, lastY:Float) //This turns selected notes into moving notes
@@ -1812,6 +2038,276 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		if(secStartTime == null || secCrochet == null || secRows == null) return;
 
 		scrollY = (((Conductor.songPosition - secStartTime) / secCrochet * GRID_SIZE * 4) + (secRows * GRID_SIZE)) * curZoom - FlxG.height/2;
+	}
+
+	function updateMinimap(elapsed:Float)
+	{
+		if(minimapBg == null) return;
+
+		if(minimapDirty)
+		{
+			minimapDirty = false;
+			redrawMinimap();
+		}
+
+		var songLen:Float = (FlxG.sound.music != null && FlxG.sound.music.length > 0) ? FlxG.sound.music.length : 1;
+		var ratio:Float = FlxMath.bound(Conductor.songPosition / songLen, 0, 1);
+
+		minimapCursor.y = minimapBg.y + ratio * (_mmH - minimapCursor.height);
+
+		if(cachedSectionRow != null && cachedSectionRow.length > 0)
+		{
+			var totalStepsHL:Int = cachedSectionRow[cachedSectionRow.length - 1] + 16;
+			var hlRowStart:Int = (curSec < cachedSectionRow.length) ? cachedSectionRow[curSec] : 0;
+			var hlRowEnd:Int   = (curSec + 1 < cachedSectionRow.length) ? cachedSectionRow[curSec + 1] : totalStepsHL;
+			var hlY:Float = minimapBg.y + (hlRowStart / totalStepsHL) * _mmH;
+			var hlH:Int   = Std.int(Math.max(2, (hlRowEnd - hlRowStart) / totalStepsHL * _mmH));
+			minimapSectionHighlight.y = hlY;
+			if(Std.int(minimapSectionHighlight.height) != hlH)
+			{
+				minimapSectionHighlight.makeGraphic(_mmW, hlH, 0x336688FF);
+				minimapSectionHighlight.updateHitbox();
+			}
+		}
+
+		if(minimapViewport != null && cachedSectionRow != null && cachedSectionRow.length > 0)
+		{
+			var totalRows:Int = cachedSectionRow[cachedSectionRow.length - 1] + 16;
+			var totalGridH:Float = totalRows * GRID_SIZE * curZoom;
+			if(totalGridH > 0)
+			{
+				var vpTop:Float = FlxMath.bound(scrollY / totalGridH, 0, 1);
+				var vpBot:Float = FlxMath.bound((scrollY + FlxG.height) / totalGridH, 0, 1);
+				var vpY:Int  = Std.int(vpTop * _mmH);
+				var vpH:Int  = Std.int(Math.max(4, (vpBot - vpTop) * _mmH));
+				minimapViewport.y = minimapBg.y + vpY;
+				minimapViewport.x = minimapBg.x;
+				if(Std.int(minimapViewport.height) != vpH)
+				{
+					minimapViewport.makeGraphic(_mmW, vpH, 0x44FFFFFF);
+					minimapViewport.updateHitbox();
+				}
+			}
+		}
+
+		var curSec_:Float = Conductor.songPosition / 1000;
+		var totalSec_:Float = songLen / 1000;
+		minimapTimeText.text = FlxStringUtil.formatTime(curSec_, true) + '\n/' + FlxStringUtil.formatTime(totalSec_, true);
+
+		var totalSecs:Int = PlayState.SONG != null ? PlayState.SONG.notes.length : 1;
+		minimapSectionText.text = 'Sec ${curSec + 1}/$totalSecs';
+		var mmRect = minimapBg.getScreenBounds(null, camUI);
+		var mouseOverMM:Bool = mmRect.containsPoint(FlxPoint.weak(FlxG.mouse.screenX, FlxG.mouse.screenY));
+
+		if(FlxG.mouse.justPressed && mouseOverMM)
+			minimapDragging = true;
+		if(FlxG.mouse.justReleased)
+			minimapDragging = false;
+
+		if(minimapDragging)
+		{
+			ignoreClickForThisFrame = true;
+			var relY:Float = FlxMath.bound((FlxG.mouse.screenY - minimapBg.y) / _mmH, 0, 1);
+			var targetTime:Float = relY * songLen;
+			if(FlxG.sound.music != null)
+			{
+				setSongPlaying(false);
+				FlxG.sound.music.time = FlxMath.bound(targetTime, 0, songLen - 1);
+				Conductor.songPosition = FlxG.sound.music.time + Conductor.offset;
+				lilBf.animation.play('idle');
+				lilOpp.animation.play('idle');
+				lilBfIdleTimer = lilOppIdleTimer = 0;
+				updateScrollY();
+			}
+		}
+	}
+
+	function redrawMinimap()
+	{
+		if(minimapCanvas == null || cachedSectionTimes == null || cachedSectionTimes.length < 1) return;
+		if(cachedSectionRow == null || cachedSectionRow.length < 1) return;
+
+		var bmd = minimapCanvas.pixels;
+		bmd.fillRect(bmd.rect, 0x00000000);
+
+		var totalSteps:Int = cachedSectionRow[cachedSectionRow.length - 1] + 16;
+		if(totalSteps <= 0) return;
+
+		var totalNoteCols:Int = GRID_PLAYERS * GRID_COLUMNS_PER_PLAYER; // 8
+		var totalGridCols:Int = totalNoteCols + (SHOW_EVENT_COLUMN ? 1 : 0);
+
+		var unitW:Float = _mmW / totalGridCols;
+		var eventW:Int  = SHOW_EVENT_COLUMN ? Std.int(unitW) : 0;
+		var colW:Int    = Std.int(Math.max(2, unitW));
+
+		for(i in 0...cachedSectionTimes.length)
+		{
+			var secY:Int    = (i < cachedSectionRow.length) ? Std.int(cachedSectionRow[i] / totalSteps * _mmH) : _mmH;
+			var secEndY:Int = (i + 1 < cachedSectionRow.length)
+				? Std.int(cachedSectionRow[i + 1] / totalSteps * _mmH) : _mmH;
+			var secH:Int = secEndY - secY;
+			if(secH <= 0) continue;
+
+			var bgA:Int = (i % 2 == 0) ? 0xFF2E2E2E : 0xFF252525;
+			var bgB:Int = (i % 2 == 0) ? 0xFF272727 : 0xFF1E1E1E;
+			bmd.fillRect(new Rectangle(eventW, secY, Std.int(GRID_COLUMNS_PER_PLAYER * unitW), secH), bgA);
+			bmd.fillRect(new Rectangle(eventW + Std.int(GRID_COLUMNS_PER_PLAYER * unitW), secY,
+				_mmW - eventW - Std.int(GRID_COLUMNS_PER_PLAYER * unitW), secH), bgB);
+			if(eventW > 0)
+				bmd.fillRect(new Rectangle(0, secY, eventW, secH), 0xFF1A1A1A);
+		}
+
+		for(c in 1...totalGridCols)
+		{
+			var xLine:Int     = Std.int(c * unitW);
+			var lineColor:Int = (c == GRID_COLUMNS_PER_PLAYER + (SHOW_EVENT_COLUMN ? 1 : 0))
+				? 0x66FFFFFF : 0x22FFFFFF;
+			bmd.fillRect(new Rectangle(xLine, 0, 1, _mmH), lineColor);
+		}
+
+		if(_minimapNoteCache != null && _minimapNoteCache[0] != null
+			&& _minimapNoteCache[0].width != colW)
+			clearMinimapNoteCache();
+
+		if(_minimapNoteCache == null)
+			_buildMinimapNoteCache(colW);
+
+		var arrowRGB = ClientPrefs.data.arrowRGB;
+		if(PlayState.SONG != null)
+		{
+			for(section in PlayState.SONG.notes)
+			{
+				if(section == null || section.sectionNotes == null || section.sectionNotes.length == 0) continue;
+				for(rawNote in section.sectionNotes)
+				{
+					if(rawNote == null) continue;
+					var col:Int = Std.int(rawNote[1]);
+					// 이벤트 노트(col >= totalNoteCols) 제외, 음수 col 제외
+					if(col < 0 || col >= totalNoteCols) continue;
+
+					var strumTime:Float  = rawNote[0];
+					var sustainLen:Float = rawNote[2];
+
+					// strumTime 기준으로 실제 섹션을 이진 탐색 — 저장 섹션과 다를 수 있음
+					var lo:Int = 0;
+					var hi:Int = cachedSectionTimes.length - 1;
+					while(lo < hi) {
+						var mid:Int = (lo + hi + 1) >> 1;
+						if(cachedSectionTimes[mid] <= strumTime) lo = mid;
+						else hi = mid - 1;
+					}
+					var actualSec:Int = lo;
+					if(actualSec >= cachedSectionCrochets.length || actualSec >= cachedSectionRow.length) continue;
+
+					var secStartTime:Float = cachedSectionTimes[actualSec];
+					var secCrochet:Float   = cachedSectionCrochets[actualSec];
+					var secRowStart:Float  = cachedSectionRow[actualSec];
+
+					var absoluteStep:Float = (strumTime - secStartTime) / secCrochet * 4 + secRowStart;
+					var noteY:Int = Std.int(absoluteStep / totalSteps * _mmH);
+					if(noteY < 0 || noteY >= _mmH) continue;
+
+					var isPlayer:Bool = (col < GRID_COLUMNS_PER_PLAYER);
+					var dir:Int       = col % GRID_COLUMNS_PER_PLAYER; // 0-3
+					var localCol:Int  = isPlayer ? col : (col - GRID_COLUMNS_PER_PLAYER);
+					var noteX:Int     = isPlayer
+						? (eventW + Std.int(localCol * unitW))
+						: (eventW + Std.int(GRID_COLUMNS_PER_PLAYER * unitW) + 1 + Std.int(localCol * unitW));
+
+					if(sustainLen > 0)
+					{
+						var holdPx:Int = Std.int(sustainLen / secCrochet * 4 / totalSteps * _mmH);
+						var holdH:Int  = Std.int(Math.max(1, holdPx));
+						if(noteY + holdH > _mmH) holdH = _mmH - noteY;
+						var barW:Int   = Std.int(Math.max(2, colW - 1));
+						var barX:Int   = noteX + Std.int((colW - barW) / 2);
+						var baseColor:FlxColor = (arrowRGB != null && dir < arrowRGB.length)
+							? arrowRGB[dir][0] : FlxColor.WHITE;
+						var holdColor:Int = (0x99 << 24) | (baseColor.red << 16) | (baseColor.green << 8) | baseColor.blue;
+						bmd.fillRect(new Rectangle(barX, noteY, barW, holdH), holdColor);
+					}
+
+					if(_minimapNoteCache != null)
+					{
+						var headBmd = _minimapNoteCache[dir];
+						if(headBmd != null)
+						{
+							var sz:Int    = headBmd.width;
+							var headY:Int = noteY - Std.int(sz / 2);
+							if(headY < 0) headY = 0;
+							var drawH:Int = sz;
+							if(headY + drawH > _mmH) drawH = _mmH - headY;
+							if(drawH > 0)
+								bmd.copyPixels(headBmd,
+									new Rectangle(0, 0, sz, drawH),
+									new Point(noteX, headY),
+									null, null, true);
+						}
+					}
+				}
+			}
+		}
+
+		minimapCanvas.pixels = bmd;
+	}
+
+	
+	function _buildMinimapNoteCache(colW:Int)
+	{
+		_minimapNoteCache = [null, null, null, null];
+		var palette = ClientPrefs.data.arrowRGB;
+
+		for(dir in 0...4)
+		{
+			var tempNote = new objects.Note(0, dir, null, false, true);
+			if(tempNote.width > tempNote.height)
+				tempNote.setGraphicSize(GRID_SIZE);
+			else
+				tempNote.setGraphicSize(0, GRID_SIZE);
+			tempNote.updateHitbox();
+
+			var frame = tempNote.frame;
+			if(frame == null)
+			{
+				tempNote.destroy();
+				continue;
+			}
+
+			var srcBmd:BitmapData = frame.paint();
+			tempNote.destroy();
+
+			if(srcBmd == null || srcBmd.width <= 0 || srcBmd.height <= 0) continue;
+
+			var rC:FlxColor = (palette != null && dir < palette.length) ? palette[dir][0] : FlxColor.RED;
+			var gC:FlxColor = (palette != null && dir < palette.length) ? palette[dir][1] : FlxColor.WHITE;
+			var bC:FlxColor = (palette != null && dir < palette.length) ? palette[dir][2] : FlxColor.BLUE;
+
+			var colored = new BitmapData(srcBmd.width, srcBmd.height, true, 0);
+			colored.applyFilter(srcBmd, srcBmd.rect, new Point(0, 0),
+				new ColorMatrixFilter([
+					rC.redFloat,   gC.redFloat,   bC.redFloat,   0, 0,
+					rC.greenFloat, gC.greenFloat, bC.greenFloat, 0, 0,
+					rC.blueFloat,  gC.blueFloat,  bC.blueFloat,  0, 0,
+					0, 0, 0, 1, 0
+				]));
+			srcBmd.dispose();
+
+			var sz:Int = Std.int(Math.max(3, colW + 1));
+			var scaled = new BitmapData(sz, sz, true, 0);
+			var sm = new Matrix();
+			sm.scale(sz / colored.width, sz / colored.height);
+			scaled.draw(colored, sm, null, null, null, true);
+			colored.dispose();
+
+			_minimapNoteCache[dir] = scaled;
+		}
+	}
+
+	function clearMinimapNoteCache()
+	{
+		if(_minimapNoteCache == null) return;
+		for(b in _minimapNoteCache) if(b != null) b.dispose();
+		_minimapNoteCache = null;
 	}
 
 	function updateSelectionBox()
@@ -2142,6 +2638,8 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 		trace('Note count: ${notes.length}');
 		trace('Events count: ${events.length}');
+		clearMinimapNoteCache();
+		minimapDirty = true;
 		loadSection();
 	}
 
@@ -2365,6 +2863,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		prevGridBg.vortexLineEnabled = gridBg.vortexLineEnabled = nextGridBg.vortexLineEnabled = vortexEnabled;
 		prevGridBg.vortexLineSpace = gridBg.vortexLineSpace = nextGridBg.vortexLineSpace = GRID_SIZE * 4 * curZoom;
 		updateWaveform();
+		// if(lilBf != null) { lilBf.animation.play('idle'); lilOpp.animation.play('idle'); lilBfIdleTimer = lilOppIdleTimer = 0; }
 	}
 
 	function softReloadNotes(onlyCurrent:Bool = false)
@@ -2570,7 +3069,17 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			'Ignore Progress Warnings', '진행 경고 무시');
 		ignoreProgressCheckBox.checked = chartEditorSave.data.ignoreProgressWarns;
 
-		objY += 50;
+		objY += 25;
+		lilBuddiesCheckBox = _rC(new PsychUICheckBox(objX, objY, "Lil' Buddies", 100, function() {
+			var v:Bool = lilBuddiesCheckBox.checked;
+			lilBf.visible = v;
+			lilOpp.visible = v;
+			lilStage.visible = v;
+		}), "Lil' Buddies", "작은 캐릭터들");
+		lilBuddiesCheckBox.checked = true;
+		tab_group.add(lilBuddiesCheckBox);
+
+		objY += 25;
 		hitsoundPlayerStepper = new PsychUINumericStepper(objX, objY, 0.2, 0, 0, 1, 1);
 		hitsoundOpponentStepper = new PsychUINumericStepper(objX + 100, objY, 0.2, 0, 0, 1, 1);
 		metronomeStepper = new PsychUINumericStepper(objX + 200, objY, 0.2, 0, 0, 1, 1);
@@ -5056,6 +5565,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 	override function destroy()
 	{
+		clearMinimapNoteCache();
 		Note.globalRgbShaders = [];
 		backend.NoteTypesConfig.clearNoteTypesData();
 
@@ -5161,6 +5671,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		//trace('pushed action: $action');
 		if(currentUndo > 0) undoActions = undoActions.slice(currentUndo);
 		currentUndo = 0;
+		if(action != SELECT_NOTE) minimapDirty = true;
 		undoActions.insert(0, {action: action, data: data});
 		while(undoActions.length > 15)
 		{
@@ -5208,7 +5719,15 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				selectedNotes = action.data.old;
 				if(lockedEvents) selectedNotes = selectedNotes.filter((note:MetaNote) -> !note.isEvent);
 				onSelectNote();
+
+			case SUSTAIN_CHANGE:
+				var stepCrochet:Float = cachedSectionCrochets[curSec] / 4;
+				for(entry in (action.data.oldValues:Array<{note:MetaNote, sustain:Float}>))
+					if(entry != null && entry.note != null)
+						entry.note.setSustainLength(entry.sustain, stepCrochet, curZoom);
+				minimapDirty = true;
 		}
+		if(action.action != SELECT_NOTE) minimapDirty = true;
 		showOutput('Undo #${currentUndo+1}: ${action.action}');
 		FlxG.sound.play(Paths.sound('scrollMenu'), 0.4);
 		currentUndo++;
@@ -5241,7 +5760,15 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				selectedNotes = action.data.current;
 				if(lockedEvents) selectedNotes = selectedNotes.filter((note:MetaNote) -> !note.isEvent);
 				onSelectNote();
+
+			case SUSTAIN_CHANGE:
+				var stepCrochet:Float = cachedSectionCrochets[curSec] / 4;
+				for(entry in (action.data.newValues:Array<{note:MetaNote, sustain:Float}>))
+					if(entry != null && entry.note != null)
+						entry.note.setSustainLength(entry.sustain, stepCrochet, curZoom);
+				minimapDirty = true;
 		}
+		if(action.action != SELECT_NOTE) minimapDirty = true;
 		showOutput('Redo #${currentUndo+1}: ${action.action}');
 		FlxG.sound.play(Paths.sound('scrollMenu'), 0.4);
 	}

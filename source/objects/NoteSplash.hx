@@ -368,6 +368,9 @@ class NoteSplash extends FlxSprite
 
 			if (copyY)
 				y = babyArrow.y - Note.swagWidth;
+
+			// cameras = babyArrow.cameras;
+			// scrollFactor.set(babyArrow.scrollFactor.x, babyArrow.scrollFactor.y);
 		}
 		super.update(elapsed);
 	}

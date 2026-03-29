@@ -5,6 +5,7 @@ import android.content.Context;
 #end
 
 import debug.FPSCounter;
+import debug.BuildWatermark;
 
 import flixel.graphics.FlxGraphic;
 import flixel.FlxGame;
@@ -59,6 +60,7 @@ class Main extends Sprite
 	};
 
 	public static var fpsVar:FPSCounter;
+	// public static var buildWatermark:BuildWatermark;
 
 	// You can pretty much ignore everything from here on - your code should go in your states.
 
@@ -166,6 +168,9 @@ class Main extends Sprite
 		if(fpsVar != null) {
 			fpsVar.visible = ClientPrefs.data.showFPS;
 		}
+
+		// buildWatermark = new BuildWatermark();
+		// addChild(buildWatermark);
 		#end
 
 		#if (linux || mac) // fix the app icon not showing up on the Linux Panel / Mac Dock

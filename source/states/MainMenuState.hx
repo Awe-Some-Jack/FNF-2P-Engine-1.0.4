@@ -95,18 +95,18 @@ class MainMenuState extends MusicBeatState
 			rightItem.x -= rightItem.width;
 		}
 
-		var twopVer:FlxText = new FlxText(12, FlxG.height - 64, 0, "2P Engine v" + twopEngineVersion, 12);
+		var twopVer:FlxText = new FlxText(12, FlxG.height - 44, 0, "퉆잎퉆잎엔진 v" + twopEngineVersion, 12);
 		twopVer.scrollFactor.set();
 		twopVer.setFormat(Paths.font("DungGeunMo.ttf"), 16, 0xff21c47d, LEFT, FlxTextBorderStyle.OUTLINE, 0xff27352f);
 		add(twopVer);
-		var psychVer:FlxText = new FlxText(12, FlxG.height - 44, 0, "Psych Engine v" + psychEngineVersion, 12);
+		var psychVer:FlxText = new FlxText(12, FlxG.height - 24, 0, "Psych Engine v" + psychEngineVersion, 12);
 		psychVer.scrollFactor.set();
 		psychVer.setFormat(Paths.font("DungGeunMo.ttf"), 16, 0xff6333d3, LEFT, FlxTextBorderStyle.OUTLINE, 0xff190055);
 		add(psychVer);
-		var fnfVer:FlxText = new FlxText(12, FlxG.height - 24, 0, "Friday Night Funkin' v" + Application.current.meta.get('version'), 12);
-		fnfVer.scrollFactor.set();
-		fnfVer.setFormat(Paths.font("DungGeunMo.ttf"), 16, FlxColor.WHITE, LEFT, FlxTextBorderStyle.OUTLINE, 0xff000000);
-		add(fnfVer);
+		// var fnfVer:FlxText = new FlxText(12, FlxG.height - 24, 0, "Friday Night Funkin' v" + Application.current.meta.get('version'), 12);
+		// fnfVer.scrollFactor.set();
+		// fnfVer.setFormat(Paths.font("DungGeunMo.ttf"), 16, FlxColor.WHITE, LEFT, FlxTextBorderStyle.OUTLINE, 0xff000000);
+		// add(fnfVer);
 		changeItem();
 
 		#if ACHIEVEMENTS_ALLOWED

@@ -701,9 +701,9 @@ class LoadingState extends MusicBeatState
 			catch(e:Dynamic) {
 				trace('ERROR! fail on preloading $traceData: $e');
 			}
-			// mutex.acquire();
+			mutex.acquire();
 			loaded++;
-			// mutex.release();
+			mutex.release();
 		});
 	}
 
