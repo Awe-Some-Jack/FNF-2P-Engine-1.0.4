@@ -55,7 +55,7 @@ class Main extends Sprite
 		height: 720, // WINDOW height
 		initialState: TitleState, // initial game state
 		framerate: 60, // default framerate
-		skipSplash: true, // if the default flixel splash screen should be skipped
+		skipSplash: false, // if the default flixel splash screen should be skipped
 		startFullscreen: false // if the game should start at fullscreen mode
 	};
 
