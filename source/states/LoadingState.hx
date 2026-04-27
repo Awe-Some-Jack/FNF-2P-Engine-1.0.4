@@ -713,7 +713,7 @@ class LoadingState extends MusicBeatState
 		{
 			var path:String = Paths.getPath('characters/$char.json', TEXT);
 			// Return cached JSON if already parsed (avoids double-parsing same character)
-			var character:Dynamic = Paths.currentTrackedCharacterData.get(path);
+			var character:Dynamic = Paths.getTrackedCharacterData(path);
 			if (character == null)
 			{
 				#if MODS_ALLOWED
@@ -721,7 +721,7 @@ class LoadingState extends MusicBeatState
 				#else
 				character = Json.parse(Assets.getText(path));
 				#end
-				Paths.currentTrackedCharacterData.set(path, character);
+				Paths.setTrackedCharacterData(path, character);
 			}
 
 			var isAnimateAtlas:Bool = false;

@@ -124,7 +124,7 @@ class Character extends FlxSprite
 
 		try
 		{
-			var cached:Dynamic = Paths.currentTrackedCharacterData.get(path);
+			var cached:Dynamic = Paths.getTrackedCharacterData(path);
 			if (cached != null)
 				loadCharacterFile(cached);
 			else
@@ -134,7 +134,7 @@ class Character extends FlxSprite
 				#else
 				var parsed:Dynamic = Json.parse(Assets.getText(path));
 				#end
-				Paths.currentTrackedCharacterData.set(path, parsed);
+				Paths.setTrackedCharacterData(path, parsed);
 				loadCharacterFile(parsed);
 			}
 		}

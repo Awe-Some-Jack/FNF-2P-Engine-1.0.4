@@ -10,7 +10,6 @@ import openfl.display.BitmapData;
 import openfl.display3D.textures.RectangleTexture;
 import openfl.utils.AssetType;
 import openfl.utils.Assets as OpenFlAssets;
-import openfl.system.System;
 import openfl.geom.Rectangle;
 
 import lime.utils.Assets;
@@ -35,6 +34,130 @@ class Paths
 	}
 
 	public static var dumpExclusions:Array<String> = ['assets/shared/music/freakyMenu.$SOUND_EXT'];
+
+	private static var secondLayerTrackedAssets:Map<String, FlxGraphic> = new Map();
+	private static var secondLayerTrackedSounds:Map<String, Sound> = new Map();
+	private static var secondLayerTrackedCharacterData:Map<String, Dynamic> = new Map();
+	private static var secondLayerPendingAtlasText:Map<String, String> = new Map();
+	private static var cacheSignalsInitialized:Bool = false;
+
+	public static function initCacheSignals():Void
+	{
+		if (cacheSignalsInitialized) return;
+		FlxG.signals.preStateSwitch.add(moveTrackedAssetsToSecondLayer);
+		FlxG.signals.postStateSwitch.add(onPostStateSwitch);
+		cacheSignalsInitialized = true;
+	}
+
+	static function onPostStateSwitch():Void
+		clearSecondLayerMemory();
+
+	public static function moveTrackedAssetsToSecondLayer():Void
+	{
+		clearSecondLayerMemory(false);
+
+		secondLayerTrackedAssets = currentTrackedAssets;
+		secondLayerTrackedSounds = currentTrackedSounds;
+		secondLayerTrackedCharacterData = currentTrackedCharacterData;
+		secondLayerPendingAtlasText = pendingAtlasText;
+
+		currentTrackedAssets = new Map();
+		currentTrackedSounds = new Map();
+		currentTrackedFrames = new Map();
+		currentTrackedCharacterData = new Map();
+		pendingAtlasText = new Map();
+		localTrackedAssets = [];
+		clearPathCaches(false);
+	}
+
+	public static function clearSecondLayerMemory(?runGC:Bool = true):Void
+	{
+		for (key in secondLayerTrackedAssets.keys())
+		{
+			if (currentTrackedAssets.exists(key)) continue;
+
+			var graphic:FlxGraphic = secondLayerTrackedAssets.get(key);
+			if (dumpExclusions.contains(key))
+			{
+				currentTrackedAssets.set(key, graphic);
+				continue;
+			}
+			destroyGraphic(graphic);
+		}
+
+		for (key => asset in secondLayerTrackedSounds)
+		{
+			if (currentTrackedSounds.exists(key)) continue;
+
+			if (dumpExclusions.contains(key))
+			{
+				currentTrackedSounds.set(key, asset);
+				continue;
+			}
+			Assets.cache.clear(key);
+		}
+
+		secondLayerTrackedAssets = new Map();
+		secondLayerTrackedSounds = new Map();
+		secondLayerTrackedCharacterData = new Map();
+		secondLayerPendingAtlasText = new Map();
+
+		if (runGC)
+		{
+			MemoryUtil.clearOpenFLUInt8Pools();
+			MemoryUtil.clearMajor();
+		}
+	}
+
+	inline static function trackLocalAsset(key:String):Void
+	{
+		if (!localTrackedAssets.contains(key))
+			localTrackedAssets.push(key);
+	}
+
+	static function restoreSecondLayerGraphic(key:String):FlxGraphic
+	{
+		var graphic:FlxGraphic = secondLayerTrackedAssets.get(key);
+		if (graphic == null) return null;
+
+		secondLayerTrackedAssets.remove(key);
+		currentTrackedAssets.set(key, graphic);
+		trackLocalAsset(key);
+
+		if (secondLayerPendingAtlasText.exists(key))
+		{
+			pendingAtlasText.set(key, secondLayerPendingAtlasText.get(key));
+			secondLayerPendingAtlasText.remove(key);
+		}
+
+		cacheGraphicOnState(graphic);
+		return graphic;
+	}
+
+	public static function getTrackedCharacterData(path:String):Dynamic
+	{
+		var data:Dynamic = currentTrackedCharacterData.get(path);
+		if (data != null) return data;
+
+		data = secondLayerTrackedCharacterData.get(path);
+		if (data != null)
+		{
+			secondLayerTrackedCharacterData.remove(path);
+			currentTrackedCharacterData.set(path, data);
+		}
+		return data;
+	}
+
+	inline public static function setTrackedCharacterData(path:String, data:Dynamic):Void
+		currentTrackedCharacterData.set(path, data);
+
+	static function cacheGraphicOnState(graphic:FlxGraphic):Void
+	{
+		if (graphic == null || FlxG.state == null || !Std.isOfType(FlxG.state, MusicBeatState))
+			return;
+		cast(FlxG.state, MusicBeatState).graphicCache.cacheGraphic(graphic);
+	}
+
 	// haya I love you for the base cache dump I took to the max
 	public static function clearUnusedMemory()
 	{
@@ -54,8 +177,7 @@ class Paths
 			}
 		}
 
-		// run the garbage collector for good measure lmfao
-		System.gc();
+		MemoryUtil.clearMinor();
 	}
 
 	// define the locally tracked assets
@@ -67,7 +189,7 @@ class Paths
 		// clear anything not in the tracked assets list
 		for (key in FlxG.bitmap._cache.keys())
 		{
-			if (!currentTrackedAssets.exists(key))
+			if (!currentTrackedAssets.exists(key) && !secondLayerTrackedAssets.exists(key))
 				destroyGraphic(FlxG.bitmap.get(key));
 		}
 
@@ -89,8 +211,7 @@ class Paths
 		currentTrackedFrames = new Map(); // clear atlas frames cache on state transition
 		currentTrackedCharacterData = new Map();
 		pendingAtlasText = new Map();
-		_pathCache = new Map();
-		_songPathCache = new Map();
+		clearPathCaches();
 		#if !html5 openfl.Assets.cache.clear("songs"); #end
 	}
 
@@ -152,6 +273,7 @@ class Paths
 
 	inline static function destroyGraphic(graphic:FlxGraphic)
 	{
+		if (graphic == null) return;
 		// free some gpu memory
 		if (graphic != null && graphic.bitmap != null && graphic.bitmap.__texture != null)
 			graphic.bitmap.__texture.dispose();
@@ -161,7 +283,7 @@ class Paths
 	static public var currentLevel:String;
 	static public function setCurrentLevel(name:String) {
 		currentLevel = name.toLowerCase();
-		_pathCache = new Map();
+		clearPathCaches(false);
 	}
 
 	private static var _pathCache:Map<String, String> = new Map();
@@ -169,11 +291,18 @@ class Paths
 	private static final _invalidChars = ~/[~&;:<>#\s]/g;
 	private static final _hideChars = ~/[.,'"%?!]/g;
 
+	public static function clearPathCaches(?includeSongPath:Bool = true):Void
+	{
+		_pathCache = new Map();
+		if (includeSongPath)
+			_songPathCache = new Map();
+	}
+
 	public static function getPath(file:String, ?type:AssetType = TEXT, ?parentfolder:String, ?modsAllowed:Bool = true):String
 	{
 		var cacheKey:String = '$file\x00${parentfolder ?? ""}\x00${modsAllowed ? 1 : 0}\x00${currentLevel ?? ""}';
 		#if MODS_ALLOWED
-		cacheKey += '\x00${Mods.currentModDirectory ?? ""}';
+		cacheKey += '\x00${Mods.currentModDirectory ?? ""}\x00${Mods.getGlobalMods().join("|")}';
 		#end
 		var cached:String = _pathCache.get(cacheKey);
 		if (cached != null) return cached;
@@ -265,26 +394,51 @@ class Paths
 	public static var currentTrackedFrames:Map<String, FlxAtlasFrames> = new Map();
 	public static var currentTrackedCharacterData:Map<String, Dynamic> = new Map();
 	public static var pendingAtlasText:Map<String, String> = new Map();
-	static public function image(key:String, ?parentFolder:String = null, ?allowGPU:Bool = true):FlxGraphic
+	static public function image(key:String, ?parentFolderOrAllowGPU:Dynamic = null, ?allowGPU:Bool = true):FlxGraphic
 	{
+		var parentFolder:String = null;
+		if (Std.isOfType(parentFolderOrAllowGPU, Bool))
+			allowGPU = cast parentFolderOrAllowGPU;
+		else if (parentFolderOrAllowGPU != null)
+			parentFolder = cast parentFolderOrAllowGPU;
+
 		key = Language.getFileTranslation('images/$key') + '.png';
 		var bitmap:BitmapData = null;
 		if (currentTrackedAssets.exists(key))
 		{
-			localTrackedAssets.push(key);
-			return currentTrackedAssets.get(key);
+			var graph:FlxGraphic = currentTrackedAssets.get(key);
+			trackLocalAsset(key);
+			cacheGraphicOnState(graph);
+			return graph;
 		}
-		return cacheBitmap(key, parentFolder, bitmap, allowGPU);
+
+		var secondLayerGraphic:FlxGraphic = restoreSecondLayerGraphic(key);
+		if (secondLayerGraphic != null)
+			return secondLayerGraphic;
+
+		return cacheBitmap(key, bitmap, parentFolder, allowGPU);
 	}
 
-	public static function cacheBitmap(key:String, ?parentFolder:String = null, ?bitmap:BitmapData, ?allowGPU:Bool = true):FlxGraphic
+	public static function cacheBitmap(key:String, ?bitmap:BitmapData, ?parentFolder:String = null, ?allowGPU:Bool = true):FlxGraphic
 	{
+		if (currentTrackedAssets.exists(key))
+		{
+			var cached:FlxGraphic = currentTrackedAssets.get(key);
+			trackLocalAsset(key);
+			cacheGraphicOnState(cached);
+			return cached;
+		}
+
+		var secondLayerGraphic:FlxGraphic = restoreSecondLayerGraphic(key);
+		if (secondLayerGraphic != null)
+			return secondLayerGraphic;
+
 		if (bitmap == null)
 		{
 			var file:String = getPath(key, IMAGE, parentFolder, true);
 			#if MODS_ALLOWED
 			if (FileSystem.exists(file))
-				bitmap = BitmapData.fromFile(file);
+				bitmap = allowGPU && ClientPrefs.data.cacheOnGPU ? OptimizedBitmapData.fromFile(file) : BitmapData.fromFile(file);
 			else #end if (OpenFlAssets.exists(file, IMAGE))
 				bitmap = OpenFlAssets.getBitmapData(file);
 
@@ -295,33 +449,38 @@ class Paths
 			}
 		}
 
-		if (allowGPU && ClientPrefs.data.cacheOnGPU && bitmap.image != null)
-		{
-			bitmap.lock();
-			if (bitmap.__texture == null)
-			{
-				bitmap.image.premultiplied = true;
-				bitmap.getTexture(FlxG.stage.context3D);
-			}
-			bitmap.getSurface();
-			bitmap.disposeImage();
-			bitmap.image.data = null;
-			bitmap.image = null;
-			bitmap.readable = true;
-		}
+		if (allowGPU && ClientPrefs.data.cacheOnGPU)
+			pushBitmapToGPU(bitmap);
 
 		var graph:FlxGraphic = FlxGraphic.fromBitmapData(bitmap, false, key);
 		graph.persist = true;
 		graph.destroyOnNoUse = false;
 
 		currentTrackedAssets.set(key, graph);
-		localTrackedAssets.push(key);
+		trackLocalAsset(key);
+		cacheGraphicOnState(graph);
 		return graph;
+	}
+
+	static function pushBitmapToGPU(bitmap:BitmapData):Void
+	{
+		if (bitmap == null || bitmap.image == null || FlxG.stage == null || FlxG.stage.context3D == null)
+			return;
+
+		bitmap.lock();
+		if (bitmap.__texture == null)
+		{
+			bitmap.image.premultiplied = true;
+			bitmap.getTexture(FlxG.stage.context3D);
+		}
+		bitmap.getSurface();
+		bitmap.readable = true;
+		bitmap.image = null;
 	}
 
 	inline static public function getTextFromFile(key:String, ?ignoreMods:Bool = false):String
 	{
-		var path:String = getPath(key, TEXT, !ignoreMods);
+		var path:String = getPath(key, TEXT, null, !ignoreMods);
 		#if sys
 		return (FileSystem.exists(path)) ? File.getContent(path) : null;
 		#else
@@ -517,6 +676,21 @@ class Paths
 		var file:String = getPath(Language.getFileTranslation(key) + '.$SOUND_EXT', SOUND, path, modsAllowed);
 
 		//trace('precaching sound: $file');
+		if(currentTrackedSounds.exists(file))
+		{
+			trackLocalAsset(file);
+			return currentTrackedSounds.get(file);
+		}
+
+		if(secondLayerTrackedSounds.exists(file))
+		{
+			var sound:Sound = secondLayerTrackedSounds.get(file);
+			secondLayerTrackedSounds.remove(file);
+			currentTrackedSounds.set(file, sound);
+			trackLocalAsset(file);
+			return sound;
+		}
+
 		if(!currentTrackedSounds.exists(file))
 		{
 			#if sys
@@ -533,7 +707,7 @@ class Paths
 				return FlxAssets.getSound('flixel/sounds/beep');
 			}
 		}
-		localTrackedAssets.push(file);
+		trackLocalAsset(file);
 		return currentTrackedSounds.get(file);
 	}
 

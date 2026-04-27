@@ -159,6 +159,8 @@ class Main extends Sprite
 		var flxGame = new FlxGame(game.width, game.height, game.initialState, game.framerate, game.framerate, game.skipSplash, game.startFullscreen);
 		@:privateAccess flxGame._customSoundTray = FunkinSoundTray;
 		addChild(flxGame);
+		backend.FunkinCache.init();
+		Paths.initCacheSignals();
 
 		#if !mobile
 		fpsVar = new FPSCounter(10, 3, 0xFFFFFF);
