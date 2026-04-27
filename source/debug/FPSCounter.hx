@@ -83,6 +83,13 @@ class FPSCounter extends TextField
 	var cachedMemStr:String = "";
 	var _lastColor:Int = -1;
 
+	inline function formatMemoryLabel(mem:Float):String
+	{
+		if (mem >= 1000)
+			return '${FlxMath.roundDecimal(mem / 1000, 2)} GB';
+		return '${FlxMath.roundDecimal(mem, 2)} MB';
+	}
+
 	// Event Handlers
 	private override function __enterFrame(deltaTime:Float):Void
 	{
@@ -95,11 +102,9 @@ class FPSCounter extends TextField
 
 		#if cpp
 		if (ramTimeout >= 1000) {
-			var mem:Float = FlxMath.roundDecimal(memoryMegas, 1);
-			if (mem >= 1000)
-				cachedMemStr = '\nRAM: ${FlxMath.roundDecimal(mem / 1000, 2)} GB';
-			else
-				cachedMemStr = '\nRAM: ${mem} MB';
+			var appMem:Float = memoryMegas;
+			var gcMem:Float = System.totalMemory / (1024.0 * 1024.0);
+			cachedMemStr = '\nRAM: [APP: ${formatMemoryLabel(appMem)} / GC: ${formatMemoryLabel(gcMem)}]';
 			ramTimeout = 0.0;
 		}
 		#end
