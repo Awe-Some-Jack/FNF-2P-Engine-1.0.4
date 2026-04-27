@@ -20,6 +20,7 @@ class MusicBeatState extends FlxState
 	}
 
 	var _psychCameraInitialized:Bool = false;
+	public var graphicCache:GraphicCacheSprite = new GraphicCacheSprite();
 
 	public var variables:Map<String, Dynamic> = new Map<String, Dynamic>();
 	public static function getVariables()
@@ -38,6 +39,18 @@ class MusicBeatState extends FlxState
 		}
 		FlxTransitionableState.skipNextTransOut = false;
 		timePassedOnState = 0;
+	}
+
+	override public function draw():Void
+	{
+		graphicCache.draw();
+		super.draw();
+	}
+
+	override public function destroy():Void
+	{
+		super.destroy();
+		graphicCache.destroy();
 	}
 
 	public function initPsychCamera():PsychCamera
