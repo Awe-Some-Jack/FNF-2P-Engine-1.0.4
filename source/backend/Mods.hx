@@ -32,11 +32,20 @@ class Mods
 	];
 
 	private static var globalMods:Array<String> = [];
+	private static var _modDirectoriesCache:Array<String> = null;
+	private static var _directoriesWithFileCache:Map<String, Array<String>> = new Map();
+
+	public static function clearFileSystemCache(?clearModDirectories:Bool = false):Void
+	{
+		_directoriesWithFileCache = new Map();
+		if (clearModDirectories)
+			_modDirectoriesCache = null;
+	}
 
 	inline public static function getGlobalMods()
 		return globalMods;
 
-	inline public static function pushGlobalMods() // prob a better way to do this but idc
+	public static function pushGlobalMods() // prob a better way to do this but idc
 	{
 		globalMods = [];
 		for(mod in parseList().enabled)
@@ -44,11 +53,16 @@ class Mods
 			var pack:Dynamic = getPack(mod);
 			if(pack != null && pack.runsGlobally) globalMods.push(mod);
 		}
+		clearFileSystemCache();
+		Paths.clearPathCaches(false);
 		return globalMods;
 	}
 
-	inline public static function getModDirectories():Array<String>
+	public static function getModDirectories(?forceRefresh:Bool = false):Array<String>
 	{
+		if (!forceRefresh && _modDirectoriesCache != null)
+			return _modDirectoriesCache.copy();
+
 		var list:Array<String> = [];
 		#if MODS_ALLOWED
 		var modsFolder:String = Paths.mods();
@@ -61,7 +75,8 @@ class Mods
 			}
 		}
 		#end
-		return list;
+		_modDirectoriesCache = list;
+		return list.copy();
 	}
 	
 	inline public static function mergeAllTextsNamed(path:String, ?defaultDirectory:String = null, allowDuplicates:Bool = false)
@@ -91,8 +106,16 @@ class Mods
 		return mergedList;
 	}
 
-	inline public static function directoriesWithFile(path:String, fileToFind:String, mods:Bool = true)
+	public static function directoriesWithFile(path:String, fileToFind:String, mods:Bool = true)
 	{
+		var cacheKey:String = '$path\x00$fileToFind\x00${mods ? 1 : 0}\x00${Paths.currentLevel ?? ""}';
+		#if MODS_ALLOWED
+		cacheKey += '\x00${Mods.currentModDirectory ?? ""}\x00${globalMods.join("|")}';
+		#end
+		var cached:Array<String> = _directoriesWithFileCache.get(cacheKey);
+		if (cached != null)
+			return cached.copy();
+
 		var foldersToCheck:Array<String> = [];
 		//Main folder
 		if(FileSystem.exists(path + fileToFind))
@@ -128,6 +151,7 @@ class Mods
 			}
 		}
 		#end
+		_directoriesWithFileCache.set(cacheKey, foldersToCheck.copy());
 		return foldersToCheck;
 	}
 
@@ -201,7 +225,7 @@ class Mods
 		}
 		
 		// Scan for folders that aren't on modsList.txt yet
-		for (folder in getModDirectories())
+		for (folder in getModDirectories(true))
 		{
 			if(folder.trim().length > 0 && FileSystem.exists(Paths.mods(folder)) && FileSystem.isDirectory(Paths.mods(folder)) &&
 			!ignoreModFolders.contains(folder.toLowerCase()) && !added.contains(folder))
@@ -222,6 +246,7 @@ class Mods
 
 		File.saveContent('modsList.txt', fileStr);
 		updatedOnState = true;
+		clearFileSystemCache(true);
 		//trace('Saved modsList.txt');
 		#end
 	}
@@ -235,5 +260,7 @@ class Mods
 		if(list != null && list[0] != null)
 			Mods.currentModDirectory = list[0];
 		#end
+		clearFileSystemCache();
+		Paths.clearPathCaches(false);
 	}
 }
